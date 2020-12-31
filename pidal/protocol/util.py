@@ -20,7 +20,7 @@ def dump_packet(data) -> str:
                 return chr(data)
             return data
         return '.'
-    result = ''
+    result = '\n\n'
     try:
         result += "packet length: %s\n" % len(data)
         for i in range(1, 7):

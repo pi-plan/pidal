@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import time
 
 from typing import Literal, List, Any
 
@@ -58,7 +59,8 @@ def _create_handler(class_name: str, args: List[List[Any]]) -> logging.Handler:
         raise Exception("logging config handler is unknown.")
 
     if args:
-        args = [i[0] for i in args if i]
+        args = [time.strftime(str(i[0])) if isinstance(i[0], str) else i[0] for
+                i in args if i]  # type: ignore
         handler = handler_cls(*args)
     else:
         handler = handler_cls()

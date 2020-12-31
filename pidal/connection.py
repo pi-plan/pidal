@@ -8,6 +8,7 @@ from tornado.iostream import IOStream, StreamClosedError
 from tornado.tcpclient import TCPClient
 
 import pidal.err as err
+import pidal.protocol.mysql.packet as mysql
 
 from pidal.connection_delegate import ConnectionDelegate
 from pidal.logging import logger
@@ -40,37 +41,30 @@ class Connection(object):
             loop.create_task(self.start_handshake())
         elif self.status is ConnectionStatus.HANDSHAKED:
             loop.create_task(self.start_serving())
+            loop.create_task(self.start_listing())
 
     async def start_handshake(self):
         try:
             logger.info("client %s:%s start handshake.", *self.address)
             self.status = ConnectionStatus.HANDSHAKEING
             client = await TCPClient().connect("zhaofakai.bcc-szwg.baidu.com",
-                                               8306)
+                                               8036)
             packet_header = await client.read_bytes(4)
             bytes_to_read, packet_number = self._parse_header(packet_header)
-            if packet_header != 0:
+            if packet_number != 0:
                 logger.error("recv to xxx handshake packet_number is %s",
                              packet_number)
 
             recv_data = await client.read_bytes(bytes_to_read)
-            logger.debug("recv server data: %s", dump_packet(recv_data))
             await self.stream.write(packet_header + recv_data)
 
             packet_header = await self.stream.read_bytes(4)
             bytes_to_read, packet_number = self._parse_header(packet_header)
-            if packet_header != 0:
-                logger.error("recv client auth packet_number is %s",
-                             packet_number)
             recv_data = await self.stream.read_bytes(bytes_to_read)
-            logger.debug("recv client data: %s", dump_packet(recv_data))
             await client.write(packet_header + recv_data)
 
             packet_header = await client.read_bytes(4)
             bytes_to_read, packet_number = self._parse_header(packet_header)
-            if packet_header != 0:
-                logger.error("recv to xxx handshake packet_number is %s",
-                             packet_number)
             recv_data = await client.read_bytes(bytes_to_read)
             await self.stream.write(packet_header + recv_data)
             if recv_data[0] == 0x00:
@@ -91,23 +85,63 @@ class Connection(object):
             while True:
                 packet = await self._read_command_packet()
                 await self.client.write(packet)
-                res = await self.client.read_bytes(0xffffff)
-                await self.stream.write(res)
         except StreamClosedError:
             logger.warning("client has close with.")
             self.close()
         except Exception as e:
             logger.warning("error with %s", str(e))
 
+    async def start_listing(self):
+        try:
+            while True:
+                packet_header = await self.client.read_bytes(4)
+                bytes_to_read, packet_number = self._parse_header(
+                        packet_header)
+                res = await self.client.read_bytes(bytes_to_read)
+                await self.stream.write(packet_header + res)
+        except StreamClosedError:
+            logger.warning("client has close with.")
+            self.close()
+        except Exception as e:
+            logger.warning("error with %s", str(e))
+
+
+
     async def _read_command_packet(self):
         packet_header = await self.stream.read_bytes(4)
         bytes_to_read, packet_number = self._parse_header(
                 packet_header)
-        if bytes_to_read > MAX_PACKET_LEN or packet_number > 0:
+        if bytes_to_read > MAX_PACKET_LEN:
             raise err.ClientPackageExceedsLength(bytes_to_read)
         recv_data = await self.stream.read_bytes(bytes_to_read)
-        logger.debug("recv client packet: %s", recv_data)
         return packet_header + recv_data
+
+    async def _read_bytes(self):
+        buff = bytes()
+        _next_seq_id = 0
+        while True:
+            packet_header = await self.stream.read_bytes(4)
+            bytes_to_read, packet_number = self._parse_header(
+                                            packet_header)
+            if packet_number != _next_seq_id:
+                if packet_number == 0:
+                    # MariaDB sends error packet with seqno==0 when shutdown
+                    raise err.OperationalError(
+                        "Lost connection to MySQL server during query")
+                raise err.InternalError(
+                    "Packet sequence number wrong - got %d expected %d"
+                    % (packet_number, _next_seq_id))
+            _next_seq_id = (_next_seq_id + 1) % 256
+
+            recv_data = await self.stream.read_bytes(bytes_to_read)
+            buff += recv_data
+            # https://dev.mysql.com/doc/internals/en/sending-more-than-16mbyte.html
+            if bytes_to_read == 0xffffff:
+                continue
+            if bytes_to_read < MAX_PACKET_LEN:
+                break
+
+        return buff
 
     def close(self):
         self.status = ConnectionStatus.CLOSE

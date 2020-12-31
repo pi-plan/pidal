@@ -12,3 +12,11 @@ class Error(PiDALError):
 
 class ClientPackageExceedsLength(Error):
     pass
+
+
+class OperationalError(Error):
+    pass
+
+
+class InternalError(Error):
+    pass

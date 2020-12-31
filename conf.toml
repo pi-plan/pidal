@@ -12,5 +12,5 @@ format = "%(asctime)s %(name)s [%(filename)s:%(lineno)d] [%(levelname)s]: %(mess
 level = "DEBUG"
 
 [logging.handler]
-args = [["./logs/pidal"], ["midnight"]]
+args = [["./logs/pidal.log.%Y-%m-%d"], ["midnight"]]
 class = "TimedRotatingFileHandler"

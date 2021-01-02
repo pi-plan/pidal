@@ -12,7 +12,7 @@ import pidal.protocol.mysql.packet as mysql
 
 from pidal.connection_delegate import ConnectionDelegate
 from pidal.logging import logger
-from pidal.protocol.util import dump_packet
+from pidal.protocol.util import dump_packet, byte2int
 
 MAX_PACKET_LEN = 2**24-1
 
@@ -47,8 +47,7 @@ class Connection(object):
         try:
             logger.info("client %s:%s start handshake.", *self.address)
             self.status = ConnectionStatus.HANDSHAKEING
-            client = await TCPClient().connect("zhaofakai.bcc-szwg.baidu.com",
-                                               8036)
+            client = await TCPClient().connect("127.0.0.1", 3306)  # TODO
             packet_header = await client.read_bytes(4)
             bytes_to_read, packet_number = self._parse_header(packet_header)
             if packet_number != 0:
@@ -98,13 +97,27 @@ class Connection(object):
                 bytes_to_read, packet_number = self._parse_header(
                         packet_header)
                 res = await self.client.read_bytes(bytes_to_read)
+                p = mysql.PacketBytesReader(res)
+                if p.is_ok_packet():
+                    ok = mysql.OK.decode(res)
+                elif p.is_eof_packet():
+                    pass
+                elif p.is_error_packet():
+                    pass
+                elif p.is_resultset_packet():
+                    for i in range(byte2int(res)):
+                        packet_header = await self.client.read_bytes(4)
+                        bytes_to_read, packet_number = self._parse_header(
+                                packet_header)
+                        print(bytes_to_read, packet_number)
+                        res = await self.client.read_bytes(bytes_to_read)
+                        print(vars(mysql.ResultSet.decode(res)))
                 await self.stream.write(packet_header + res)
         except StreamClosedError:
             logger.warning("client has close with.")
             self.close()
         except Exception as e:
             logger.warning("error with %s", str(e))
-
 
 
     async def _read_command_packet(self):

@@ -20,3 +20,7 @@ class OperationalError(Error):
 
 class InternalError(Error):
     pass
+
+
+class ProgrammingError(Error):
+    pass

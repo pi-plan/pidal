@@ -104,14 +104,9 @@ class Connection(object):
                     pass
                 elif p.is_error_packet():
                     pass
-                elif p.is_resultset_packet():
-                    for i in range(byte2int(res)):
-                        packet_header = await self.client.read_bytes(4)
-                        bytes_to_read, packet_number = self._parse_header(
-                                packet_header)
-                        print(bytes_to_read, packet_number)
-                        res = await self.client.read_bytes(bytes_to_read)
-                        print(vars(mysql.ResultSet.decode(res)))
+                else:
+                    r = await mysql.ResultSet.decode(res, self.client)
+                    print(vars(r.fields[0]))
                 await self.stream.write(packet_header + res)
         except StreamClosedError:
             logger.warning("client has close with.")

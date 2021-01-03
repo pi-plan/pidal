@@ -1,6 +1,6 @@
 import struct
 
-from typing import Any, Awaitable, Optional, Tuple
+from typing import Any, Optional, Tuple, List
 
 import pidal.err as err
 
@@ -35,6 +35,9 @@ class PacketBytesReader(object):
     def __init__(self, raw: bytes):
         self._data: bytes = raw
         self._position: int = 0
+
+    def get_raw(self) -> bytes:
+        return self._data
 
     def advance(self, length):
         new_position = self._position + length
@@ -154,6 +157,14 @@ class PacketBytesReader(object):
     def is_error_packet(self):
         return self._data[0:1] == b'\xff'
 
+    @staticmethod
+    async def read_packet(stream: Stream) -> 'PacketBytesReader':
+        header_bytes = await stream.read_bytes(4)
+        header = PacketHeader.decode(header_bytes)
+        res = await stream.read_bytes(header.payload_length)
+        p_reader = PacketBytesReader(res)
+        return p_reader
+
 
 class Execute(object):
 
@@ -233,23 +244,7 @@ class Error(object):
         return p
 
 
-class ResultSet(object):
-    field_count: int
-
-    @classmethod
-    async def decode(cls, raw: bytes,
-                     stream: Stream) -> Awaitable['ResultSet']:
-        p = cls()
-        p_reader = PacketBytesReader(raw)
-        p.field_count = p_reader.read_length_encoded_integer()
-        for i in range(p.field_count):
-            header_bytes = await stream.read_bytes(4)
-            header = PacketHeader.decode(header_bytes)
-            body = await stream.read_bytes(header.payload_length)
-        return p
-
-
-class ResultSetHeader(object):
+class ResultSetField(object):
     catalog: Optional[bytes]
     db: Optional[bytes]
     table_name: str
@@ -262,8 +257,10 @@ class ResultSetHeader(object):
     flags: int
     scale: int
 
+    data: bytes
+
     @classmethod
-    def decode(cls, raw: bytes) -> 'ResultSetHeader':
+    def decode(cls, raw: bytes) -> 'ResultSetField':
         p = cls()
         p_reader = PacketBytesReader(raw)
         p_reader.rewind()
@@ -278,3 +275,37 @@ class ResultSetHeader(object):
         # 'default' is a length coded binary and is still in the buffer?
         # not used for normal result sets...
         return p
+
+
+class ResultSet(object):
+    field_count: int
+    fields: List[ResultSetField]
+
+    def __init__(self):
+        self.fields: List[ResultSetField] = []
+
+    @classmethod
+    async def decode(cls, raw: bytes, stream: Stream) -> 'ResultSet':
+        p = cls()
+        p_reader = PacketBytesReader(raw)
+        p.field_count = p_reader.read_length_encoded_integer()
+        await p.read_fields(stream)
+        await p.read_field_data(stream)
+        return p
+
+    async def read_fields(self, stream: Stream):
+        for _ in range(self.field_count):
+            p_reader = await PacketBytesReader.read_packet(stream)
+            field = ResultSetField.decode(p_reader.get_raw())
+            self.fields.append(field)
+
+        p_reader = await PacketBytesReader.read_packet(stream)
+        assert p_reader.is_eof_packet(), 'Protocol error, expecting EOF'
+
+    async def read_field_data(self, stream: Stream):
+        for field in self.fields:
+            p_reader = await PacketBytesReader.read_packet(stream)
+            if p_reader.is_eof_packet():
+                break
+
+            field.data = p_reader.read_length_coded_string()

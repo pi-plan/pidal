@@ -6,7 +6,7 @@ import pidal.err as err
 
 from pidal.logging import logger
 from pidal.protocol.mysql import Command, ServerStatus
-from pidal.protocol.util import byte2int, dump_packet
+from pidal.protocol.util import byte2int, int2byte, dump_packet
 from pidal.protocol.mysql.stream import Stream
 
 
@@ -16,10 +16,22 @@ UNSIGNED_SHORT_COLUMN = 252
 UNSIGNED_INT24_COLUMN = 253
 UNSIGNED_INT64_COLUMN = 254
 
+MAX_INT8_VALUE = 250
+MAX_INT16_VALUE = 2 ** 16 - 1
+MAX_INT24_VALUE = 2 ** 24 - 1
+MAX_INT64_VALUE = 2 ** 64 - 1
+
 
 class PacketHeader(object):
     payload_length: int
     packet_number: int
+
+    @classmethod
+    def new(cls, payload_length: int, packet_number: int):
+        p = cls()
+        p.payload_length = payload_length
+        p.packet_number = packet_number
+        return p
 
     @classmethod
     def decode(cls, packet_header: bytes) -> 'PacketHeader':
@@ -28,6 +40,12 @@ class PacketHeader(object):
         header.payload_length = btrl + (btrh << 16)
         header.packet_number = packet_number
         return header
+
+    def encode(self) -> bytes:
+        result = struct.pack("<I", self.payload_length)
+        result = result[:3]
+        result += struct.pack("<B", self.packet_number)
+        return result
 
 
 class PacketBytesReader(object):
@@ -111,7 +129,7 @@ class PacketBytesReader(object):
         logger.error("unknown length integer %s.", c)
         raise Exception("unknown length integer {}.".format(c))
 
-    def read_length_coded_string(self) -> Optional[bytes]:
+    def read_length_coded_string(self) -> Optional[str]:
         c = self.read_uint8()
         if c == NULL_COLUMN:
             return None
@@ -124,7 +142,7 @@ class PacketBytesReader(object):
             length = self.read_uint24()
         elif c == UNSIGNED_INT64_COLUMN:
             length = self.read_uint64()
-        return self.read(length)
+        return self.read(length).decode()
 
     def read_struct(self, fmt) -> Tuple[Any, ...]:
         s = struct.Struct(fmt)
@@ -164,6 +182,42 @@ class PacketBytesReader(object):
         res = await stream.read_bytes(header.payload_length)
         p_reader = PacketBytesReader(res)
         return p_reader
+
+
+class PacketBytesWriter(object):
+
+    @staticmethod
+    def write_length_encoded_integer(v: int) -> bytes:
+        r = bytes()
+        if v <= MAX_INT8_VALUE:
+            return int2byte(v)
+        elif v <= MAX_INT16_VALUE:
+            r = int2byte(UNSIGNED_CHAR_COLUMN)
+            r += int2byte(v)
+            return r
+        elif v <= MAX_INT24_VALUE:
+            r = int2byte(UNSIGNED_INT24_COLUMN)
+            r += int2byte(v)
+            return r
+        elif v <= MAX_INT64_VALUE:
+            r = int2byte(UNSIGNED_INT64_COLUMN)
+            r += int2byte(v)
+            return r
+        return r
+
+    @staticmethod
+    def write_length_coded_string(v: Optional[str]) -> bytes:
+        if v is None:
+            return int2byte(NULL_COLUMN)
+        length = len(v)
+        r = PacketBytesWriter.write_length_encoded_integer(length)
+        r += v.encode()
+        return r
+
+    @staticmethod
+    def write_struct(fmt: str, *v: Any) -> bytes:
+        result = struct.pack(fmt, *v)
+        return result
 
 
 class Execute(object):
@@ -216,7 +270,15 @@ class OK(object):
 class EOF(object):
     server_status: int
     warning_count: int
-    has_next: int
+    has_next: bool
+
+    @classmethod
+    def new(cls, warning_count: int, server_status: int, has_next: bool):
+        eof = cls()
+        eof.server_status = server_status
+        eof.warning_count = warning_count
+        eof.has_next = has_next
+        return eof
 
     @classmethod
     def decode(cls, raw: bytes):
@@ -225,8 +287,20 @@ class EOF(object):
         p_reader.rewind()
 
         p.warning_count, p.server_status = p_reader.read_struct('<xhh')
-        p.has_next = p.server_status & ServerStatus.SERVER_MORE_RESULTS_EXISTS
+        p.has_next = \
+            bool(p.server_status & ServerStatus.SERVER_MORE_RESULTS_EXISTS)
         return p
+
+    def encode(self) -> bytes:
+        server_status = self.server_status
+        if self.has_next:
+            server_status = \
+                self.server_status | ServerStatus.SERVER_MORE_RESULTS_EXISTS
+        return PacketBytesWriter.write_struct(
+                '<Bhh',
+                0xfe,
+                self.warning_count,
+                server_status)
 
 
 class Error(object):
@@ -245,19 +319,17 @@ class Error(object):
 
 
 class ResultSetField(object):
-    catalog: Optional[bytes]
-    db: Optional[bytes]
-    table_name: str
-    org_table: str
-    name: str
-    org_name: str
+    catalog: Optional[str]
+    db: Optional[str]
+    table_name: Optional[str]
+    org_table: Optional[str]
+    name: Optional[str]
+    org_name: Optional[str]
     charsetnr: int
     length: int
     type_code: int
     flags: int
     scale: int
-
-    data: bytes
 
     @classmethod
     def decode(cls, raw: bytes) -> 'ResultSetField':
@@ -266,23 +338,42 @@ class ResultSetField(object):
         p_reader.rewind()
         p.catalog = p_reader.read_length_coded_string()
         p.db = p_reader.read_length_coded_string()
-        p.table_name = p_reader.read_length_coded_string().decode()
-        p.org_table = p_reader.read_length_coded_string().decode()
-        p.name = p_reader.read_length_coded_string().decode()
-        p.org_name = p_reader.read_length_coded_string().decode()
+        p.table_name = p_reader.read_length_coded_string()
+        p.org_table = p_reader.read_length_coded_string()
+        p.name = p_reader.read_length_coded_string()
+        p.org_name = p_reader.read_length_coded_string()
         p.charsetnr, p.length, p.type_code, p.flags, p.scale = (
             p_reader.read_struct('<xHIBHBxx'))
         # 'default' is a length coded binary and is still in the buffer?
         # not used for normal result sets...
         return p
 
+    def encode(self) -> bytes:
+        result = bytes()
+        result += PacketBytesWriter.write_length_coded_string(self.catalog)
+        result += PacketBytesWriter.write_length_coded_string(self.db)
+        result += PacketBytesWriter.write_length_coded_string(self.table_name)
+        result += PacketBytesWriter.write_length_coded_string(self.org_table)
+        result += PacketBytesWriter.write_length_coded_string(self.name)
+        result += PacketBytesWriter.write_length_coded_string(self.org_name)
+        result += PacketBytesWriter.write_struct('<xHIBHBxx',
+                                                 self.charsetnr,
+                                                 self.length,
+                                                 self.type_code,
+                                                 self.flags,
+                                                 self.scale)
+        return result
+
 
 class ResultSet(object):
     field_count: int
     fields: List[ResultSetField]
+    rows: List[Tuple[Optional[str]]]
 
     def __init__(self):
+        self.field_count: int = 0
         self.fields: List[ResultSetField] = []
+        self.rows: List[Tuple[Optional[str]]] = []
 
     @classmethod
     async def decode(cls, raw: bytes, stream: Stream) -> 'ResultSet':
@@ -290,7 +381,7 @@ class ResultSet(object):
         p_reader = PacketBytesReader(raw)
         p.field_count = p_reader.read_length_encoded_integer()
         await p.read_fields(stream)
-        await p.read_field_data(stream)
+        await p.read_row_data(stream)
         return p
 
     async def read_fields(self, stream: Stream):
@@ -300,12 +391,63 @@ class ResultSet(object):
             self.fields.append(field)
 
         p_reader = await PacketBytesReader.read_packet(stream)
+        print(vars(EOF.decode(p_reader.get_raw())))
         assert p_reader.is_eof_packet(), 'Protocol error, expecting EOF'
 
-    async def read_field_data(self, stream: Stream):
-        for field in self.fields:
+    async def read_row_data(self, stream: Stream):
+        while True:  # 不确定数据条数，所以就一直的获取
             p_reader = await PacketBytesReader.read_packet(stream)
             if p_reader.is_eof_packet():
                 break
+            self.rows.append(self._read_row(p_reader))
 
-            field.data = p_reader.read_length_coded_string()
+    def _read_row(self, p_reader: PacketBytesReader) -> Tuple[Optional[str]]:
+        row: List[Optional[str]] = []
+        for _ in self.fields:
+            try:
+                data = p_reader.read_length_coded_string()
+            except IndexError:
+                break
+
+            row.append(data)
+        return tuple(row)
+
+    async def encode(self, warning_count: int, server_status: int,
+                     stream: Stream, packet_number=0):
+
+        if not self.field_count:
+            return
+        result = \
+            PacketBytesWriter.write_length_encoded_integer(self.field_count)
+        header = PacketHeader.new(len(result), packet_number).encode()
+        await stream.write(header + result)
+        packet_number += 1
+
+        # 发送 field
+        for field in self.fields:
+            result = field.encode()
+            header = PacketHeader.new(len(result), packet_number).encode()
+            await stream.write(header + result)
+            packet_number += 1
+
+        # field end
+        result = EOF.new(warning_count, server_status, False).encode()
+        header = PacketHeader.new(len(result), packet_number).encode()
+        await stream.write(header + result)
+        packet_number += 1
+
+        # row send
+        for row in self.rows:
+            result = bytes()
+            for i in row:
+                result += PacketBytesWriter.write_length_coded_string(i)
+
+            header = PacketHeader.new(len(result), packet_number).encode()
+            await stream.write(header + result)
+            packet_number += 1
+
+        # row end
+        result = EOF.new(warning_count, server_status, False).encode()
+
+        header = PacketHeader.new(len(result), packet_number).encode()
+        await stream.write(header + result)

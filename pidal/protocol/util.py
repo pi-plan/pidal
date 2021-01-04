@@ -1,19 +1,21 @@
 import struct
 import sys
 
+from typing import Union
 
-def byte2int(b):
+
+def byte2int(b: Union[bytes, int]) -> int:
     if isinstance(b, int):
         return b
     else:
         return struct.unpack("!B", b)[0]
 
 
-def int2byte(i):
+def int2byte(i: int) -> bytes:
     return struct.pack("!B", i)
 
 
-def dump_packet(data) -> str:
+def dump_packet(data: bytes) -> str:
     def printable(data):
         if 32 <= byte2int(data) < 127:
             if isinstance(data, int):

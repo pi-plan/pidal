@@ -1,6 +1,7 @@
 import asyncio
 import enum
 import struct
+import traceback
 
 from typing import Tuple
 
@@ -69,6 +70,7 @@ class Connection(object):
             if recv_data[0] == 0x00:
                 self.status = ConnectionStatus.HANDSHAKED
                 self.client = client  # TODO remove when finished protocol dev
+
                 self.start()
             elif recv_data[0] == 0xff:
                 self.close()
@@ -99,19 +101,19 @@ class Connection(object):
                 res = await self.client.read_bytes(bytes_to_read)
                 p = mysql.PacketBytesReader(res)
                 if p.is_ok_packet():
-                    ok = mysql.OK.decode(res)
+                    await self.stream.write(packet_header + res)
                 elif p.is_eof_packet():
-                    pass
+                    await self.stream.write(packet_header + res)
                 elif p.is_error_packet():
-                    pass
+                    await self.stream.write(packet_header + res)
                 else:
                     r = await mysql.ResultSet.decode(res, self.client)
-                    print(vars(r.fields[0]))
-                await self.stream.write(packet_header + res)
+                    await r.encode(0, 2, self.stream, packet_number)
         except StreamClosedError:
             logger.warning("client has close with.")
             self.close()
         except Exception as e:
+            traceback.print_exc()
             logger.warning("error with %s", str(e))
 
 

@@ -1,16 +1,18 @@
 title = "PiDAL config file"
-[proxy]
-host = "127.0.0.1"
-port = 8080
-[meta]
-[meta.server]
-host = "127.0.0.1"
-port = 8080
+
 [logging]
 datefmt = ""
 format = "%(asctime)s %(name)s [%(filename)s:%(lineno)d] [%(levelname)s]: %(message)s"
 level = "DEBUG"
-
 [logging.handler]
 args = [["./logs/pidal.log.%Y-%m-%d"], ["midnight"]]
 class = "TimedRotatingFileHandler"
+
+[proxy]
+host = "127.0.0.1"
+port = 8080
+
+[meta]
+[meta.server]
+host = "127.0.0.1"
+port = 8080

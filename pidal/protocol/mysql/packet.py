@@ -7,7 +7,7 @@ import pidal.err as err
 from pidal.logging import logger
 from pidal.protocol.mysql import Command, ServerStatus
 from pidal.protocol.util import byte2int, int2byte, dump_packet
-from pidal.protocol.mysql.stream import Stream
+from pidal.stream import Stream
 
 
 NULL_COLUMN = 251
@@ -51,10 +51,17 @@ class PacketHeader(object):
 class PacketBytesReader(object):
 
     def __init__(self, raw: bytes):
+        self._header: PacketHeader
         self._data: bytes = raw
         self._position: int = 0
 
+    def get_header(self) -> PacketHeader:
+        return self._header
+
     def get_raw(self) -> bytes:
+        return self._header.encode() + self._data
+
+    def get_payload(self) -> bytes:
         return self._data
 
     def advance(self, length):
@@ -181,7 +188,13 @@ class PacketBytesReader(object):
         header = PacketHeader.decode(header_bytes)
         res = await stream.read_bytes(header.payload_length)
         p_reader = PacketBytesReader(res)
+        p_reader._header = header
         return p_reader
+
+    @staticmethod
+    async def read_execute_packet(stream: Stream) -> 'Execute':
+        p_reader = await PacketBytesReader.read_packet(stream)
+        return Execute.decode(p_reader.get_payload())
 
 
 class PacketBytesWriter(object):
@@ -231,14 +244,14 @@ class Execute(object):
     def decode(cls, raw: bytes) -> 'Execute':
         p = cls()
         try:
-            p.command = Command(raw[4])
+            p.command = Command(raw[0])
         except ValueError:
             logger.warning("unknown command %s, with packet: %s",
                            byte2int(raw[0]), dump_packet(raw))
             raise err.OperationalError("unknown command {}.".format(
                                         byte2int(raw[0])))
         finally:
-            p.args = raw[5:]
+            p.args = raw[1:]
             if p.command is Command.COM_QUERY:
                 p.query = p.args.decode()
         return p
@@ -387,11 +400,10 @@ class ResultSet(object):
     async def read_fields(self, stream: Stream):
         for _ in range(self.field_count):
             p_reader = await PacketBytesReader.read_packet(stream)
-            field = ResultSetField.decode(p_reader.get_raw())
+            field = ResultSetField.decode(p_reader.get_payload())
             self.fields.append(field)
 
         p_reader = await PacketBytesReader.read_packet(stream)
-        print(vars(EOF.decode(p_reader.get_raw())))
         assert p_reader.is_eof_packet(), 'Protocol error, expecting EOF'
 
     async def read_row_data(self, stream: Stream):

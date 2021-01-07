@@ -263,7 +263,7 @@ class OK(object):
     server_status: int
     warning_count: int
     message: str
-    has_next: int
+    has_next: bool
 
     @classmethod
     def decode(cls, raw: bytes) -> 'OK':
@@ -276,7 +276,8 @@ class OK(object):
         p.insert_id = p_reader.read_length_encoded_integer()
         p.server_status, p.warning_count = p_reader.read_struct('<HH')
         p.message = p_reader.read_all().decode()
-        p.has_next = p.server_status & ServerStatus.SERVER_MORE_RESULTS_EXISTS
+        p.has_next = \
+            bool(p.server_status & ServerStatus.SERVER_MORE_RESULTS_EXISTS)
         return p
 
 

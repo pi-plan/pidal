@@ -1,5 +1,12 @@
-from typing import List, Any, Optional
+import re
+
+from typing import List, Any, Optional, Tuple, Union
+
 import toml
+
+
+TABLE_NAME_EXP_RE = re.compile(r"^([\w.]+)_{+)\,\s*+)\,*\s*?)}$""()()()}")
+TABLE_NAME_NUM_RE = re.compile(r"^([\w.]+)_(\d+)$")
 
 
 class ProxyConfig(object):
@@ -58,6 +65,13 @@ class LoggingConfig(object):
         return cls._instance
 
 
+class TableNameItem(object):
+    def __init__(self, node: str, base: str, number: int):
+        self.node: str = node
+        self.name_base: str = base
+        self.number = number
+
+
 def parser_config(file: str):
     with open(file, "r") as f:
         config = toml.load(f)
@@ -87,3 +101,45 @@ def parser_config(file: str):
                 config["logging"]["format"],
                 config["logging"]["datefmt"],
                 logging_handler)
+
+
+def number_expression(expression: str) -> Optional[List[TableNameItem]]:
+    value = TABLE_NAME_EXP_RE.findall(expression)
+    if not value:
+        return None
+    if len(value) > 1:
+        raise Exception("expression: [{}] has two expression".format(
+            expression))
+    value = [i for i in value[0] if i]
+    if len(value) < 3:
+        raise Exception("expression: [{}] need stop.".format(
+            expression))
+    if len(value) > 4:
+        raise Exception("expression: [{}] only need start, stop, step.".format(
+            expression))
+    base = str(value[0])
+    start = int(value[1])
+    stop = int(value[2])
+    step = 1
+    if len(value) > 3:
+        step = int(value[3])
+
+    result = []
+    for i in range(start, stop, step):
+        result.append(TableNameItem(base, i))
+
+    return result
+
+
+def parser_tablename(expression: str) -> Optional[TableNameItem]:
+    value = TABLE_NAME_NUM_RE.findall(expression)
+    if not value:
+        return None
+    if len(value) > 1:
+        raise Exception("expression: [{}] has two numbers.".format(
+            expression))
+    value = [i for i in value[0] if i]
+    if len(value) != 2:
+        raise Exception("expression: [{}] need one number.".format(
+            expression))
+    return TableNameItem(value[0], int(value[1]))

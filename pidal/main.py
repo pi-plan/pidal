@@ -15,6 +15,8 @@ def parse_args():
     parser.add_argument('--version', action='version', version=VERSION)
     parser.add_argument("--config", metavar="conf.toml", action="store",
                         default="conf.toml", help="config file path.")
+    parser.add_argument("--zone-id", metavar="1", action="store", type=int,
+                        default=0, help="current zone id.")
     args = parser.parse_args()
     return args
 
@@ -22,7 +24,7 @@ def parse_args():
 def main():
     args = vars(parse_args())
     debug = args["debug"]
-    parser_config(args["config"])
+    parser_config(args["zone_id"], args["config"])
     init_logging(debug)
     server = ProxyServer()
     server.start()

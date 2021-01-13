@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "zones": {
+    "1": {
+      "zone_id": 1,
+      "zone_name": "BJ",
+      "shardings": [
+        {
+          "zsid": 1,
+          "status": "BLOCK"
+        }
+      ],
+      "db": {
+        "name": "test_database",
+        "source_replica": {
+          "enable": true,
+          "algorithm": "random"
+        },
+        "nodes": [
+          {
+            "type": "source",
+            "name": "db0",
+            "dsn": "mysql://ddddd",
+            "maximum_pool_size": 100
+          },
+          {
+            "type": "replica",
+            "name": "db01",
+            "dsn": "mysql://ddddd",
+            "maximum_pool_size": 100,
+            "follow": "db0"
+          },
+          {
+            "type": "source",
+            "name": "db1",
+            "dsn": "mysql://ddddd",
+            "maximum_pool_size": 100
+          }
+        ],
+        "tables": [
+          {
+            "type": "raw",
+            "name": "test_raw",
+            "strategies": [
+              {
+                "backends": [
+                  "db0.test_raw"
+                ]
+              }
+            ]
+          },
+          {
+            "type": "sharding",
+            "name": "test_t",
+            "strategies": [
+              {
+                "backends": [
+                  "db0.test_t_0",
+                  "db0.test_t_2",
+                  "db1.test_t_{1, 3, 1}"
+                ],
+                "sharding_columns": [
+                  "user_id",
+                  "area_id"
+                ],
+                "algorithm": "mod"
+              }
+            ]
+          },
+          {
+            "type": "double_sharding",
+            "name": "test_t",
+            "strategies": [
+              {
+                "backends": [
+                  "db0.test_t_0",
+                  "db0.test_t_2",
+                  "db1.test_t_{1, 3, 1}"
+                ],
+                "sharding_columns": [
+                  "user_id"
+                ],
+                "algorithm": "mod"
+              },
+              {
+                "backends": [
+                  "db0.test_t_0",
+                  "db0.test_t_2",
+                  "db1.test_t_{1, 3, 1}"
+                ],
+                "sharding_columns": [
+                  "area_id"
+                ],
+                "algorithm": "mod"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

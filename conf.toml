@@ -1,18 +1,92 @@
 title = "PiDAL config file"
 
-[logging]
-datefmt = ""
-format = "%(asctime)s %(name)s [%(filename)s:%(lineno)d] [%(levelname)s]: %(message)s"
-level = "DEBUG"
-[logging.handler]
-args = [["./logs/pidal.log.%Y-%m-%d"], ["midnight"]]
-class = "TimedRotatingFileHandler"
+[base] # 基本必备配置 TODO 通过环境变量获取
+version = 1 # 配置版本号
+meta_server_enable = true
+zone_enable = true
+zone_id = 1 # 当前的 Zone ID 
 
-[proxy]
-host = "127.0.0.1"
-port = 8080
+[base.logging] # 日志配置
+    datefmt = ""
+    format = "%(asctime)s %(name)s [%(filename)s:%(lineno)d] [%(levelname)s]: %(message)s"
+    level = "DEBUG"
 
-[meta]
-[meta.server]
-host = "127.0.0.1"
-port = 8080
+[base.logging.handler]
+    args = [["./logs/pidal.log.%Y-%m-%d"], ["midnight"]]
+    class = "TimedRotatingFileHandler"
+
+[base.proxy] # 代理服务配置
+    host = "127.0.0.1" # 监听地址
+    port = 8080
+    max_connections = 1000 # 最大连接数
+    connect_timeout = 10 # 连接超时时间单位 秒
+    wait_timeout = 3600 # 最大空闲时间
+    transaction_timeout = 5 # 事务超时时间 需要小于等于 lock_wait_timeout 
+
+[base.meta_service]
+servers = [{host = "127.0.0.1", port = 8080}, {host = "127.0.0.1", port = 8080}] # pimms 服务地址
+wait_timeout = 10 # 和 pimms 失联多久之后触发失联 
+
+#### 下面配置从 meta 获取 #####
+
+[[zone]] # 机房配置，每个 Zone 有一条。
+zone_id = 1  # Zone ID，为了在其他地方做枚举使用
+zone_name = "BJ" # Zone 名字
+[[zone.sharding]] # 每个 Zone 可以有多个，每个 ZSID 只能有一个。
+zsid = 1 # ZSID
+status = "BLOCK" # 状态
+# belong_zone_id = 1 # 应该在那个 Zone，便于
+
+[zone.db]  # 数据库配置, 不启用 zone 的时候就不在 zone 下。 
+name = "test_database" # 数据库名字
+
+[zone.db.source_replica] # 读写分离配置
+enable = true # 是否启用读写分离
+algorithm = "random" # 负载均衡算法
+
+[[zone.db.node]] # 数据库实际后端配置，同时存在多条
+type = "source"
+name = "db0"
+dsn = "mysql://ddddd"
+maximum_pool_size = 100
+
+[[zone.db.node]]
+type = "replica"
+name = "db01"
+dsn = "mysql://ddddd"
+maximum_pool_size = 100
+follow = "db0"
+
+[[zone.db.node]]
+type = "source"
+name = "db1"
+dsn = "mysql://ddddd"
+maximum_pool_size = 100
+
+[[zone.db.table]] # 数据库表配置
+type = "raw" # 表类型，raw 原始表，无特殊策略
+name = "test_raw" # 表名字
+[[zone.db.table.strategy]] # 分表策略
+backend = ["db0.test_raw"] # 对于原始表直接指定原始表所在 node.table 即可
+
+[[zone.db.table]]
+type = "sharding" # sharding 表
+name = "test_t" # 逻辑表名
+[[zone.db.table.strategy]]
+# 需要指定每个实际表名字所在的node。
+# 支持 `{start, end, step}` 快捷表达式便捷生成多个表名字。包含 start，不包含end
+backend = ["db0.test_t_0", "db0.test_t_2", "db1.test_t_{1, 3, 1}"]
+sharding_column = ["user_id", "area_id"] #  分表字段
+algorithm = "mod" # 分表策略
+
+[[zone.db.table]]
+type = "double_sharding" # 双 sharding 表
+name = "test_t"
+[[zone.db.table.strategy]] # 需要有两个分表策略的配置
+backend = ["db0.test_t_0", "db0.test_t_2", "db1.test_t_{1, 3, 1}"]
+sharding_column = ["user_id"]
+algorithm = "mod"
+[[zone.db.table.strategy]]
+backend = ["db0.test_t_0", "db0.test_t_2", "db1.test_t_{1, 3, 1}"]
+sharding_column = ["area_id"]
+algorithm = "mod"

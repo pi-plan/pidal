@@ -10,11 +10,12 @@ TABLE_NAME_NUM_RE = re.compile(r"^([\w.]+)_(\d+)$")
 
 class ZoneConfig(object):
     def __init__(self, zone_id: int, zone_name: str,
-                 shardings: List['ZoneSharding'], db: 'DBConfig'):
+                 shardings: List['ZoneSharding'],
+                 db: Optional['DBConfig'] = None):
         self.zone_id: int = zone_id
         self.zone_name: str = zone_name
         self.shardings: List[ZoneSharding] = shardings
-        self.db: DBConfig = db
+        self.db: Optional[DBConfig] = db
 
     @classmethod
     def new_from_dict(cls, conf: Dict[str, Any]):
@@ -22,7 +23,10 @@ class ZoneConfig(object):
         for i in conf["shardings"]:
             sharding = ZoneSharding.new_from_dict(i)
             shardings.append(sharding)
-        db = DBConfig.new_from_dict(conf["db"])
+
+        db = None
+        if "db" in conf.keys():
+            db = DBConfig.new_from_dict(conf["db"])
         zc = cls(conf["zone_id"], conf["zone_name"], shardings, db)
 
         return zc
@@ -47,12 +51,17 @@ class DBConfig(object):
     def __init__(self,
                  name: str,
                  source_replica_enable: bool,
-                 algorithm: str):
+                 algorithm: str,
+                 idle_in_transaction_session_timeout: int = 5000):
         self.name: str = name
         self.source_replica_enable: bool = source_replica_enable
         self.algorithm = algorithm
         self.nodes: Dict[str, DBNode] = dict()
         self.tables: Dict[str, DBTable] = dict()
+
+        # 事务空闲超时时间，单位毫秒, 默认 5000ms
+        self.idle_in_transaction_session_timeout: int \
+            = idle_in_transaction_session_timeout
 
     @classmethod
     def new_from_dict(cls, conf: dict) -> 'DBConfig':
@@ -76,9 +85,13 @@ class DBConfig(object):
 
 class DBTable(object):
     def __init__(self, type: DBTableType, name: str,
+                 status: RuleStatus, zskeys: List[str], zs_algorithm: str,
                  strategies: List['DBTableStrategy']):
         self.type: DBTableType = type
         self.name: str = name
+        self.status: RuleStatus = status
+        self.zskeys = zskeys
+        self.zs_algorithm = zs_algorithm
         self.strategies: List[DBTableStrategy] = strategies
 
     @classmethod
@@ -88,11 +101,15 @@ class DBTable(object):
             s = DBTableStrategy.new_from_dict(i)
             strategies.append(s)
         if isinstance(conf["type"], int):
-            status = DBTableType(conf["type"])
+            type = DBTableType(conf["type"])
         else:
-            status = DBTableType.name2value(conf["type"])
-
-        dbt = cls(status, conf["name"], strategies)
+            type = DBTableType.name2value(conf["type"])
+        if isinstance(conf["status"], int):
+            status = RuleStatus(conf["status"])
+        else:
+            status = RuleStatus.name2value(conf["status"])
+        dbt = cls(type, conf["name"], status, conf["zskeys"],
+                  conf["zs_algorithm"], strategies)
 
         return dbt
 

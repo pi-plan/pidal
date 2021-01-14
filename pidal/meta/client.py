@@ -1,6 +1,6 @@
 import json
 
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, Callable
 
 from pidal.config import Config
 
@@ -12,6 +12,19 @@ class Client(object):
     def __init__(self, servers: List[Tuple[str, int]], wait_timeout: int):
         self.servers = servers
         self.wait_timeout = wait_timeout
+
+        # 元数据更新的观察者
+        self.observers: List[Callable[[int]]] = []
+
+    def add_observer(self, handler: Callable[[int]]):
+        if handler in self.observers:
+            return
+        self.observers.append(handler)
+
+    def version_update_notify(self, new_version: int):
+        for observer in self.observers:
+            observer(new_version)
+        self.role_changed = True
 
     @classmethod
     def new(cls) -> 'Client':
@@ -41,5 +54,10 @@ class Client(object):
         """ 获取所有的 Zone 配置 """
         return self._get_meta(version)["zones"]
 
-    def get_zone(self, version: Optional[int], zone_id: int) -> Dict[str, Any]:
-        return self.get_zones(version).get
+    def get_db(self, version: Optional[int], zone_id: int) -> Dict[str, Any]:
+        return self.get_zones(version).get("db")
+
+    def hearbeat(self):
+        # TODO finish heartbeat.
+        pass
+

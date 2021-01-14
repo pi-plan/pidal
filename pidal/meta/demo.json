@@ -41,6 +41,11 @@
           {
             "type": "raw",
             "name": "test_raw",
+            "status": "ACTIVE",
+            "zskeys": [
+                "user_id"
+            ],
+            "zs_algorithm": "mod",
             "strategies": [
               {
                 "backends": [
@@ -52,6 +57,11 @@
           {
             "type": "sharding",
             "name": "test_t",
+            "status": "ACTIVE",
+            "zskeys": [
+                "user_id"
+            ],
+            "zs_algorithm": "mod",
             "strategies": [
               {
                 "backends": [
@@ -70,6 +80,11 @@
           {
             "type": "double_sharding",
             "name": "test_t",
+            "status": "ACTIVE",
+            "zskeys": [
+                "area_id"
+            ],
+            "zs_algorithm": "mod",
             "strategies": [
               {
                 "backends": [

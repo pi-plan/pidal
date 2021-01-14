@@ -4,7 +4,7 @@ import argparse
 from pidal import VERSION
 from pidal.config import parser_config
 from pidal.logging import init_logging
-from pidal.proxy import ProxyServer
+from pidal.frontend.frontend import Frontend
 
 
 def parse_args():
@@ -26,5 +26,5 @@ def main():
     debug = args["debug"]
     parser_config(args["zone_id"], args["config"])
     init_logging(debug)
-    server = ProxyServer()
+    server = Frontend()
     server.start()

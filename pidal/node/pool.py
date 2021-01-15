@@ -1,11 +1,11 @@
 import asyncio
 import collections
 
-from typing import Set, Dict, Any
+from typing import Set
 
 import async_timeout
 
-from pidal.backend.connection import Connection
+from pidal.node.connection import Connection
 
 
 class Pool(asyncio.AbstractServer):
@@ -13,14 +13,14 @@ class Pool(asyncio.AbstractServer):
     def __init__(self,
                  minsize: int,
                  maxsize: int,
+                 dsn: str,
                  timeout: int = 10,
-                 recycle: int = 0,
-                 **connectioni_kwargs):
+                 recycle: int = 0):
         self.minsize: int = minsize
         self.maxsize: int = maxsize
         self.timeout: int = timeout
         self.recycle: int = recycle
-        self.connectioni_kwargs: Dict[str, Any] = connectioni_kwargs
+        self.dsn: str = dsn
 
         self.loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
 
@@ -58,7 +58,7 @@ class Pool(asyncio.AbstractServer):
         while self.size < self.minsize:
             self._acquiring += 1
             try:
-                conn = await Connection.new(**self.connectioni_kwargs)
+                conn = await Connection.new(self.dsn)
                 self._free.append(conn)
             finally:
                 self._acquiring -= 1
@@ -68,7 +68,7 @@ class Pool(asyncio.AbstractServer):
         if override_min and self.size < self.maxsize:
             self._acquiring += 1
             try:
-                conn = await Connection.new(**self.connectioni_kwargs)
+                conn = await Connection.new(self.dsn)
                 self._free.append(conn)
             finally:
                 self._acquiring -= 1

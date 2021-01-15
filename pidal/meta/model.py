@@ -219,11 +219,16 @@ class DBTableStrategyBackend(object):
 
 class DBNode(object):
     def __init__(self, type: DBNodeType, name: str, dsn: str,
-                 maximum_pool_size: int = 100, follow: str = None):
+                 minimum_pool_size: int = 1, maximum_pool_size: int = 100,
+                 wait_time: int = 3600, acquire_timeout: int = 5,
+                 follow: str = None):
         self.type: DBNodeType = type
         self.name: str = name
         self.dsn: str = dsn
+        self.minimum_pool_size: int = max(minimum_pool_size, 1)
         self.maximum_pool_size: int = maximum_pool_size
+        self.wait_time: int = wait_time  # 最长空闲时间
+        self.acquire_timeout: int = acquire_timeout
         self.follow: Optional[str] = follow
 
     @classmethod

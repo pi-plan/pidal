@@ -7,7 +7,7 @@ class Connection(abc.ABC):
 
     @classmethod
     @abc.abstractclassmethod
-    async def new(cls, **kwargs) -> 'Connection':
+    async def new(cls, dsn: str) -> 'Connection':
         pass
 
     @abc.abstractmethod

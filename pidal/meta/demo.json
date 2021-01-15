@@ -21,19 +21,24 @@
             "type": "source",
             "name": "db0",
             "dsn": "mysql://ddddd",
-            "maximum_pool_size": 100
+            "minimum_pool_size": 1,
+            "maximum_pool_size": 100,
+            "acquire_timeout": 5,
+            "wait_time": 100
           },
           {
             "type": "replica",
             "name": "db01",
             "dsn": "mysql://ddddd",
             "maximum_pool_size": 100,
+            "wait_time": 100,
             "follow": "db0"
           },
           {
             "type": "source",
             "name": "db1",
             "dsn": "mysql://ddddd",
+            "wait_time": 100,
             "maximum_pool_size": 100
           }
         ],

@@ -11,7 +11,6 @@ from pidal.authentication.handshake import Handshake
 from pidal.connection_delegate import ConnectionDelegate
 from pidal.logging import logger
 from pidal.stream import IOStream
-from pidal.pool.pool import PoolManager
 
 MAX_PACKET_LEN = 2**24-1
 

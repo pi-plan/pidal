@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "zones": {
-    "1": {
+  "zones": [
+    {
       "zone_id": 1,
       "zone_name": "BJ",
       "shardings": [
@@ -61,7 +61,7 @@
           },
           {
             "type": "sharding",
-            "name": "test_t",
+            "name": "test_sharing",
             "status": "ACTIVE",
             "zskeys": [
                 "user_id"
@@ -84,7 +84,7 @@
           },
           {
             "type": "double_sharding",
-            "name": "test_t",
+            "name": "test_double_sharding",
             "status": "ACTIVE",
             "zskeys": [
                 "area_id"
@@ -118,5 +118,5 @@
         ]
       }
     }
-  }
+  ]
 }

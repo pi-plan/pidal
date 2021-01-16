@@ -14,9 +14,9 @@ class Client(object):
         self.wait_timeout = wait_timeout
 
         # 元数据更新的观察者
-        self.observers: List[Callable[[int]]] = []
+        self.observers: List[Callable[[int], None]] = []
 
-    def add_observer(self, handler: Callable[[int]]):
+    def add_observer(self, handler: Callable[[int], None]):
         if handler in self.observers:
             return
         self.observers.append(handler)
@@ -43,7 +43,7 @@ class Client(object):
         return cls._instance
 
     def _get_meta(self, version: Optional[int] = None) -> Dict[str, Any]:
-        conf = json.load(open("./meta/demo.json"))
+        conf = json.load(open("./pidal/meta/demo.json"))
         return conf
 
     def get_latest_version(self) -> int:

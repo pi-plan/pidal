@@ -1,1 +1,1 @@
-from .result import Result, ResultSet, Execute, OK, EOF, Error
+from .result import Result, ResultSet, ResultDescription, Execute, OK, EOF, Error

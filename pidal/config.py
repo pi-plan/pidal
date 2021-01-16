@@ -174,8 +174,8 @@ def parser_config(zone_id: int, file: str):
                 logging_handler)
 
         c = Config.new(_get_zone_id(zone_id, config),
-                       bool(config["meta_server_enable"]),
-                       bool(config["zone_enable"]))
+                       bool(config["base"]["meta_server_enable"]),
+                       bool(config["base"]["zone_enable"]))
         if c.meta_server_enable or c.zone_enable:
             if "meta_service" not in config["base"]:
                 raise Exception("config file is error.")
@@ -183,7 +183,7 @@ def parser_config(zone_id: int, file: str):
                 if i not in config["base"]["meta_service"]:
                     raise Exception("config file is error.")
             servers = []
-            for i in config["base"]["meta_service"]["server"]:
+            for i in config["base"]["meta_service"]["servers"]:
                 servers.append((i["host"], i["port"]))
 
             MetaService.new(servers,
@@ -194,7 +194,7 @@ def _get_zone_id(zone_id: int, conf: MutableMapping[str, Any]) -> int:
     """
     获取当前的 zone id 优先级为 启动参数指定 > 配置文件指定 > 环境变量
     """
-    if not zone_id:
+    if zone_id:
         return zone_id
     if "zone_id" in conf.keys():
         return int(conf["zone_id"])

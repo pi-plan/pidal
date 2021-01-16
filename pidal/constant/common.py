@@ -10,7 +10,7 @@ class RuleStatus(enum.IntEnum):
     @classmethod
     def name2value(cls, name: str) -> 'RuleStatus':
         for member in list(cls):
-            if member.value == name.upper():
+            if member.name == name.upper():
                 return member
 
         raise Exception("type [{}] is not supported.".format(name))

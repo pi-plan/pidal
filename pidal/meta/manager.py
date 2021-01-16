@@ -38,13 +38,14 @@ class MetaManager(object):
         self.observers: List[Callable[[int]]] = []
 
         self._pimms_client: Client
-        self._metaVersionTool = CircularVersionNumber(MAX_META_VERSION,
-                                                      META_VERSION_BUFFERSIZE)
+        self._meta_version_tool = CircularVersionNumber(
+                MAX_META_VERSION, META_VERSION_BUFFERSIZE)
+        self.init_pimms_client()
 
     def get_latest_version(self) -> int:
         return self.latest_version
 
-    def add_observer(self, handler: Callable[[int]]):
+    def add_observer(self, handler: Callable[[int], None]):
         if handler in self.observers:
             return
         self.observers.append(handler)
@@ -115,6 +116,5 @@ class MetaManager(object):
     def parser_db_config(conf: Dict[str, Any]) -> DBConfig:
         return DBConfig.new_from_dict(conf)
 
-    @staticmethod
-    def version_gt(v1: int, v2: int) -> bool:
-        return CircularVersionNumber.gt(v1, v2)
+    def version_gt(self, v1: int, v2: int) -> bool:
+        return self._meta_version_tool.gt(v1, v2)

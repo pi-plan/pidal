@@ -71,13 +71,13 @@ class DBConfig(object):
 
         for i in conf["nodes"]:
             node = DBNode.new_from_dict(i)
-            if node.name in dbc.nodes.keys:
+            if node.name in dbc.nodes.keys():
                 raise Exception("[{}] node has defined.".format(node.name))
             dbc.nodes[node.name] = node
 
         for i in conf["tables"]:
             table = DBTable.new_from_dict(i)
-            if table.name in dbc.tables.keys:
+            if table.name in dbc.tables.keys():
                 raise Exception("[{}] table has defined.".format(table.name))
             dbc.tables[table.name] = table
         return dbc
@@ -117,11 +117,11 @@ class DBTable(object):
 class DBTableStrategy(object):
     def __init__(self,
                  backends: List['DBTableStrategyBackend'],
-                 sharding_columns: List[str],
-                 algorithm: str):
+                 sharding_columns: Optional[List[str]],
+                 algorithm: Optional[str]):
         self.backends: List[DBTableStrategyBackend] = backends
-        self.sharding_columns: List[str] = sharding_columns
-        self.algorithm: str = algorithm
+        self.sharding_columns: Optional[List[str]] = sharding_columns
+        self.algorithm: Optional[str] = algorithm
 
     @classmethod
     def new_from_dict(cls, conf: dict) -> 'DBTableStrategy':
@@ -129,7 +129,7 @@ class DBTableStrategy(object):
         for i in conf["backends"]:
             bs = DBTableStrategyBackend.number_expression(i)
             if bs:
-                backends.append(*bs)
+                backends.extend(bs)
                 continue
             t = DBTableStrategyBackend.parser_tablename(i)
             if t:
@@ -139,8 +139,11 @@ class DBTableStrategy(object):
             if t:
                 backends.append(t)
 
-        sharding_columns: List[str] = conf["sharding_columns"]
-        return cls(backends, sharding_columns, conf["algorithm"])
+        sharding_columns = None
+        if "sharding_columns" in conf.keys():
+            sharding_columns = conf["sharding_columns"]
+        algorithm = conf["algorithm"] if "algorithm" in conf.keys() else None
+        return cls(backends, sharding_columns, algorithm)
 
 
 class DBTableStrategyBackend(object):
@@ -237,6 +240,6 @@ class DBNode(object):
             status = DBNodeType(conf["type"])
         else:
             status = DBNodeType.name2value(conf["type"])
-
+        del(conf["type"])
         dbn = cls(status, **conf)
         return dbn

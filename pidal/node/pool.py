@@ -1,11 +1,14 @@
 import asyncio
 import collections
+import time
 
 from typing import Set
 
 import async_timeout
 
 from pidal.node.connection import Connection
+from pidal.node.platform.dsn import DSN
+from pidal.node.platform.connector import get_connector
 
 
 class Pool(asyncio.AbstractServer):
@@ -20,9 +23,7 @@ class Pool(asyncio.AbstractServer):
         self.maxsize: int = maxsize
         self.timeout: int = timeout
         self.recycle: int = recycle
-        self.dsn: str = dsn
-
-        self.loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+        self.dsn: DSN = DSN(dsn)
 
         self._acquiring: int = 0
         self._free = collections.deque(maxlen=maxsize or None)
@@ -48,7 +49,7 @@ class Pool(asyncio.AbstractServer):
             conn = self._free[-1]
             if conn.closed:
                 self._free.pop()
-            elif 0 < self.recycle < self.loop.time() - conn.last_usage:
+            elif 0 < self.recycle < time.time() - conn.last_usage:
                 conn.close()
                 self._free.pop()
             else:
@@ -58,7 +59,7 @@ class Pool(asyncio.AbstractServer):
         while self.size < self.minsize:
             self._acquiring += 1
             try:
-                conn = await Connection.new(self.dsn)
+                conn = await self._create_connection()
                 self._free.append(conn)
             finally:
                 self._acquiring -= 1
@@ -68,10 +69,16 @@ class Pool(asyncio.AbstractServer):
         if override_min and self.size < self.maxsize:
             self._acquiring += 1
             try:
-                conn = await Connection.new(self.dsn)
+                conn = await self._create_connection()
                 self._free.append(conn)
             finally:
                 self._acquiring -= 1
+
+    async def _create_connection(self):
+        connector = get_connector(self.dsn.platform)
+        conn = connector.new(self.dsn)
+        await conn.connect()
+        return conn
 
     def close(self):
         if self._closed:
@@ -122,7 +129,6 @@ class Pool(asyncio.AbstractServer):
             if self._closing:
                 conn.close()
             else:
-                conn.clean()
                 self._free.append(conn)
             asyncio.get_event_loop().create_task(self._wakeup())
 

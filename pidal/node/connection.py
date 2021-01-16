@@ -1,13 +1,15 @@
 import abc
 
-import pidal.backend.result as result
+import pidal.node.result as result
+
+from pidal.node.platform.dsn import DSN
 
 
 class Connection(abc.ABC):
 
     @classmethod
     @abc.abstractclassmethod
-    async def new(cls, dsn: str) -> 'Connection':
+    def new(cls, dsn: DSN) -> 'Connection':
         pass
 
     @abc.abstractmethod
@@ -15,15 +17,15 @@ class Connection(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def begin(self) -> result.Result:
+    async def begin(self):
         pass
 
     @abc.abstractmethod
-    async def commit(self) -> result.Result:
+    async def commit(self):
         pass
 
     @abc.abstractmethod
-    async def rollback(self) -> result.Result:
+    async def rollback(self):
         pass
 
     @abc.abstractmethod
@@ -35,17 +37,9 @@ class Connection(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def clean(self):
-        pass
-
-    @abc.abstractmethod
     def close(self):
         pass
 
     @abc.abstractmethod
     def is_closed(self) -> bool:
-        pass
-
-    @abc.abstractmethod
-    async def get_last_executed(self) -> str:
         pass

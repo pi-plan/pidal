@@ -1,6 +1,6 @@
 import asyncio
-from pidal.node.result.command import Command
-from pidal.node.result.result import Execute
+import enum
+from pidal.dservice.dservice import DService
 
 from typing import Tuple
 
@@ -8,15 +8,22 @@ import tornado.iostream as torio
 
 import pidal.protocol.mysql as mysql
 
-from pidal.dservice.dservice import DService
-from pidal.dservice.dsession import DSession
-from pidal.constant.db import SessionStatus
 from pidal.authentication.handshake import Handshake
 from pidal.connection_delegate import ConnectionDelegate
 from pidal.logging import logger
 from pidal.stream import IOStream
 
 MAX_PACKET_LEN = 2**24-1
+
+
+@enum.unique
+class SessionStatus(enum.IntFlag):
+    CLOSE = 1
+    INIT = 2  # 初始化
+    HANDSHAKEING = 4  # 握手认证中
+    HANDSHAKED = 8  # 已完成握手认证
+    SERVING = 16  # 服务中
+    IN_TRANSACTION = 32  # 在事务中
 
 
 class Session(object):
@@ -28,7 +35,6 @@ class Session(object):
         self.delegate: ConnectionDelegate = delegate
         self.status: SessionStatus = SessionStatus.INIT
         self.dserver = dserver
-        self.dsession: DSession = dserver.create_session()
 
     def start(self):
         loop = asyncio.get_running_loop()
@@ -57,10 +63,8 @@ class Session(object):
             while True:
                 packet = await mysql.PacketBytesReader.read_execute_packet(
                         self.stream)
-                execute = Execute(packet.length,
-                                  Command(packet.command),
-                                  packet.args, packet.query)
-                r = await self.dsession.query(execute)
+                conn = await PoolManager.acquire()
+                r = await conn.query(packet.query)
                 print(r)
         except torio.StreamClosedError:
             logger.warning("client has close with.")
@@ -68,9 +72,30 @@ class Session(object):
         except Exception as e:
             logger.warning("error with %s", str(e))
 
-    def get_session_status(self) -> SessionStatus:
-        return self.dsession.get_session_status()
+    async def start_listing(self):
+        try:
+            while True:
+                packet_header = await self.client.read_bytes(4)
+                bytes_to_read, packet_number = self._parse_header(
+                        packet_header)
+                res = await self.client.read_bytes(bytes_to_read)
+                p = mysql.PacketBytesReader(res)
+                if p.is_ok_packet():
+                    await self.stream.write(packet_header + res)
+                elif p.is_eof_packet():
+                    await self.stream.write(packet_header + res)
+                elif p.is_error_packet():
+                    await self.stream.write(packet_header + res)
+                else:
+                    r = await mysql.ResultSet.decode(res, self.client)
+                    await r.encode(0, 2, self.stream, packet_number)
+        except torio.StreamClosedError:
+            logger.warning("client has close with.")
+            self.close()
+        except Exception as e:
+            logger.warning("error with %s", str(e))
 
     def close(self):
         self.status = SessionStatus.CLOSE
         self.delegate.on_close(self)  # type: ignore
+

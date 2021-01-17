@@ -1,5 +1,6 @@
-from pidal.dservice.backend.backend_manager import BackendManager
 from typing import Dict
+
+from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.table.table import Table
 from pidal.dservice.zone_manager import ZoneManager
 from pidal.meta.model import DBConfig

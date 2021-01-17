@@ -1,17 +1,21 @@
-from pidal.dservice.backend.backend_manager import BackendManager
-from typing import Optional
+from typing import Optional, Set, Tuple, cast
+
 from tornado.ioloop import IOLoop
+from tornado.iostream import IOStream
 
 from pidal.logging import logger
 from pidal.config import ProxyConfig
 from pidal.frontend.tcpserver import ProxyTCPServer
+from pidal.frontend.session import Session
 from pidal.meta.manager import MetaManager
 from pidal.dservice.dservice import DService
+from pidal.dservice.backend.backend_manager import BackendManager
 
 
 class Frontend(ProxyTCPServer):
     def __init__(self):
         super().__init__()
+        self.sessions: Set[Session] = set()
         self._conf: ProxyConfig = ProxyConfig.get_instance()
         self.meta_manager = MetaManager.new()
 
@@ -19,6 +23,21 @@ class Frontend(ProxyTCPServer):
         self.dserver: DService
         # 上一个版本的服务, 在服务升级期间会存在
         self.prev_dserver: Optional[DService] = None
+
+    async def handle_stream(self, stream: IOStream, address: Tuple[str, int]):
+        logger.info("get connection from %s:%s", *address)
+        sess = Session(stream, address, self, self.dserver)
+        self.sessions.add(sess)
+        sess.start()
+
+    def on_close(self, sess: Session):
+        self.sessions.remove(cast(Session, sess))
+
+    def on_recv():  # type: ignore
+        pass
+
+    def on_send():  # type: ignore
+        pass
 
     def bootstrap(self):
         BackendManager.new()

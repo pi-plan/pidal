@@ -2,6 +2,8 @@ import abc
 
 from typing import Any, List, Tuple, Optional
 
+from pidal.node.result.command import Command
+
 
 class Result(abc.ABC):
 
@@ -56,8 +58,11 @@ class ResultSet(Result):
 
 class Execute(Result):
 
-    def __init__(self):
-        self.sql: str = ''
+    def __init__(self, length: int, command: Command, args: bytes, query: str):
+        self.length = length
+        self.command: Command = command
+        self.args: bytes = args
+        self.query: str = query
 
     def to_mysql(self):
         pass

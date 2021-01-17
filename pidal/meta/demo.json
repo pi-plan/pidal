@@ -20,7 +20,7 @@
           {
             "type": "source",
             "name": "db0",
-            "dsn": "mysql://ddddd",
+            "dsn": "mysql://root:@127.0.0.1:3306/test",
             "minimum_pool_size": 1,
             "maximum_pool_size": 100,
             "acquire_timeout": 5,
@@ -29,7 +29,7 @@
           {
             "type": "replica",
             "name": "db01",
-            "dsn": "mysql://ddddd",
+            "dsn": "mysql://root:@127.0.0.1:3306/test",
             "maximum_pool_size": 100,
             "wait_time": 100,
             "follow": "db0"
@@ -37,7 +37,7 @@
           {
             "type": "source",
             "name": "db1",
-            "dsn": "mysql://ddddd",
+            "dsn": "mysql://root:@127.0.0.1:3306/test",
             "wait_time": 100,
             "maximum_pool_size": 100
           }

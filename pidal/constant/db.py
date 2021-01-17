@@ -29,3 +29,13 @@ class DBTableType(enum.IntEnum):
                 return member
 
         raise Exception("type [{}] is not supported.".format(name))
+
+
+@enum.unique
+class SessionStatus(enum.IntFlag):
+    CLOSE = 1
+    INIT = 2  # 初始化
+    HANDSHAKEING = 4  # 握手认证中
+    HANDSHAKED = 8  # 已完成握手认证
+    SERVING = 16  # 服务中
+    IN_TRANSACTION = 32  # 在事务中

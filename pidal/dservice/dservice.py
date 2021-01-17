@@ -1,9 +1,10 @@
 import enum
-from pidal.dservice.database.database import Database
 from typing import List
 
 from pidal.meta.model import ZoneConfig, DBConfig
 from pidal.dservice.zone_manager import ZoneManager
+from pidal.dservice.database.database import Database
+from pidal.dservice.dsession import DSession
 
 
 @enum.unique
@@ -24,3 +25,6 @@ class DService(object):
 
     def get_version(self) -> int:
         return self.version
+
+    def create_session(self) -> DSession:
+        return DSession(self.db)

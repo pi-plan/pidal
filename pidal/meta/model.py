@@ -52,10 +52,14 @@ class DBConfig(object):
                  name: str,
                  source_replica_enable: bool,
                  algorithm: str,
+                 algorithm_args: Optional[List[Any]] = None,
+                 transaction_mod: str = "simple",
                  idle_in_transaction_session_timeout: int = 5000):
         self.name: str = name
         self.source_replica_enable: bool = source_replica_enable
         self.algorithm = algorithm
+        self.algorithm_args = algorithm_args
+        self.transaction_mod = transaction_mod
         self.nodes: Dict[str, DBNode] = dict()
         self.tables: Dict[str, DBTable] = dict()
 
@@ -65,9 +69,14 @@ class DBConfig(object):
 
     @classmethod
     def new_from_dict(cls, conf: dict) -> 'DBConfig':
+        transaction_mod = str(conf.get("transaction_mod", "simple"))
+        idle_in_transaction_session_timeout = conf.get(
+                "idle_in_transaction_session_timeout", 0)
         dbc = cls(conf["name"],
                   conf["source_replica"]["enable"],
-                  conf["source_replica"]["algorithm"])
+                  conf["source_replica"]["algorithm"],
+                  conf["source_replica"]["algorithm_args"],
+                  transaction_mod, idle_in_transaction_session_timeout)
 
         for i in conf["nodes"]:
             node = DBNode.new_from_dict(i)
@@ -86,12 +95,14 @@ class DBConfig(object):
 class DBTable(object):
     def __init__(self, type: DBTableType, name: str,
                  status: RuleStatus, zskeys: List[str], zs_algorithm: str,
+                 zs_algorithm_args: Optional[List[Any]],
                  strategies: List['DBTableStrategy']):
         self.type: DBTableType = type
         self.name: str = name
         self.status: RuleStatus = status
         self.zskeys = zskeys
         self.zs_algorithm = zs_algorithm
+        self.zs_algorithm_args = zs_algorithm_args
         self.strategies: List[DBTableStrategy] = strategies
 
     @classmethod
@@ -109,7 +120,7 @@ class DBTable(object):
         else:
             status = RuleStatus.name2value(conf["status"])
         dbt = cls(type, conf["name"], status, conf["zskeys"],
-                  conf["zs_algorithm"], strategies)
+                  conf["zs_algorithm"], conf["zs_algorithm_args"], strategies)
 
         return dbt
 
@@ -118,10 +129,12 @@ class DBTableStrategy(object):
     def __init__(self,
                  backends: List['DBTableStrategyBackend'],
                  sharding_columns: Optional[List[str]],
-                 algorithm: Optional[str]):
+                 algorithm: Optional[str],
+                 algorithm_args: Optional[List[Any]] = None):
         self.backends: List[DBTableStrategyBackend] = backends
         self.sharding_columns: Optional[List[str]] = sharding_columns
         self.algorithm: Optional[str] = algorithm
+        self.algorithm_args = algorithm_args
 
     @classmethod
     def new_from_dict(cls, conf: dict) -> 'DBTableStrategy':
@@ -143,7 +156,9 @@ class DBTableStrategy(object):
         if "sharding_columns" in conf.keys():
             sharding_columns = conf["sharding_columns"]
         algorithm = conf["algorithm"] if "algorithm" in conf.keys() else None
-        return cls(backends, sharding_columns, algorithm)
+        algorithm_args = conf["algorithm_args"] if "algorithm_args" in \
+            conf.keys() else None
+        return cls(backends, sharding_columns, algorithm, algorithm_args)
 
 
 class DBTableStrategyBackend(object):

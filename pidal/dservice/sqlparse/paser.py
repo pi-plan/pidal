@@ -11,12 +11,15 @@ class SQL(object):
     def __init__(self, raw: Statement):
         self.raw = raw
 
+    def add_pidal(self, _: int):  # type: ignore
+        pass
+
     def parse_table_name(self):
         fl = self._get_from_part()
         table = self.extract_table_identifiers(fl)
         if len(table) != 1:
             raise Exception("Not support sub select.")
-        self.table_name = str(table[0])
+        self.table = table[0]
 
     def parse_where(self, where) -> Dict[str, int]:
         column = {}
@@ -32,6 +35,9 @@ class SQL(object):
                 column.update(self.parse_where(i.tokens))
                 continue
         return column
+
+    def modify_table(self, name: str):
+        self.table[0].value = name
 
     @staticmethod
     def _parse_comparison(s: Comparison):
@@ -82,9 +88,9 @@ class SQL(object):
         for item in token_stream:
             if isinstance(item, IdentifierList):
                 for identifier in item.get_identifiers():
-                    tables.append(identifier.get_name())
+                    tables.append(identifier)
             elif isinstance(item, Identifier):
-                tables.append(item.get_name())
+                tables.append(item)
         return tables
 
 
@@ -103,6 +109,9 @@ class TCL(SQL):
 
         self.raw = raw
         self.parse()
+
+    def modify_table(self, name: str):  # type:ignore
+        pass
 
     def parse(self):
         get_first = False
@@ -127,7 +136,14 @@ class TCL(SQL):
             self.trans_args.append(i.value)
 
 
-class Select(SQL):
+class DML(SQL):
+    def __init__(self, raw: Statement):
+        self.raw = raw
+        self.table: Identifier
+        self.column: Dict[str, int]
+
+
+class Select(DML):
 
     def __init__(self, raw: Statement):
         self.table_name: str
@@ -142,7 +158,7 @@ class Select(SQL):
         self.column = self.parse_where(where)
 
 
-class Delete(SQL):
+class Delete(DML):
 
     def __init__(self, raw: Statement):
         self.table_name: str
@@ -156,7 +172,7 @@ class Delete(SQL):
         where = self._get_where_part()
         self.column = self.parse_where(where)
 
-    def add_pidal(self):
+    def add_pidal(self, _: int):  # type: ignore
         for item in self.raw.tokens:
             if item.is_group and isinstance(item, Where):
                 c = sqlparse.parse(" pidal_c & 1 AND ")
@@ -165,7 +181,7 @@ class Delete(SQL):
                     item.insert_before(1, v)
 
 
-class Update(SQL):
+class Update(DML):
 
     def __init__(self, raw: Statement):
         self.table_name: str
@@ -197,13 +213,13 @@ class Update(SQL):
             self.raw.insert_before(where, i)
 
 
-class Insert(SQL):
+class Insert(DML):
 
     def __init__(self, raw: Statement):
         self.table_name: str
         self.column: Dict[str, int]
 
-        self.table: Function
+        self.table_f: Function
         self.values: Values
 
         self.raw = raw
@@ -215,13 +231,13 @@ class Insert(SQL):
             if i.ttype is token.Whitespace:
                 continue
             if isinstance(i, Function):
-                self.table = i
+                self.table_f = i
             elif isinstance(i, Values):
                 self.values = i
-        if not self.table or not self.values:
+        if not self.table_f or not self.values:
             raise Exception("sql error.")
 
-        column = self._parse_table(self.table)
+        column = self._parse_table(self.table_f)
         if not column:
             raise Exception("sql error.")
 
@@ -234,7 +250,7 @@ class Insert(SQL):
                 self.column[k] = int(v)
 
     def add_pidal(self, value: int):
-        for i in self.table.tokens:
+        for i in self.table_f.tokens:
             if isinstance(i, Parenthesis):
                 for j in i.tokens:
                     if isinstance(j, IdentifierList):
@@ -257,7 +273,7 @@ class Insert(SQL):
         column = []
         for i in table:
             if isinstance(i, Identifier):
-                self.table_name = i.value
+                self.table = i
             if isinstance(i, Parenthesis):
                 for j in i.tokens:
                     if isinstance(j, IdentifierList):
@@ -377,6 +393,5 @@ if __name__ == "__main__":
 
     de = Parser.parse(sql)
     for i in de:
-        if isinstance(i, Insert):
-            i.add_pidal(100)
-            print(str(i.raw))
+        i.add_pidal(100)
+        i.modify_table("a_22")

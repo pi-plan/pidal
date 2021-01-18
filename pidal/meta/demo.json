@@ -12,9 +12,14 @@
       ],
       "db": {
         "name": "test_database",
+        "transaction_mod": "simple",
+        "idle_in_transaction_session_timeout": 5000,
         "source_replica": {
           "enable": true,
-          "algorithm": "random"
+          "algorithm": "random",
+          "algorithm_args": [
+            16
+          ]
         },
         "nodes": [
           {
@@ -48,9 +53,12 @@
             "name": "test_raw",
             "status": "ACTIVE",
             "zskeys": [
-                "user_id"
+              "user_id"
             ],
             "zs_algorithm": "mod",
+            "zs_algorithm_args": [
+              16
+            ],
             "strategies": [
               {
                 "backends": [
@@ -64,9 +72,12 @@
             "name": "test_sharing",
             "status": "ACTIVE",
             "zskeys": [
-                "user_id"
+              "user_id"
             ],
             "zs_algorithm": "mod",
+            "zs_algorithm_args": [
+              16
+            ],
             "strategies": [
               {
                 "backends": [
@@ -78,7 +89,10 @@
                   "user_id",
                   "area_id"
                 ],
-                "algorithm": "mod"
+                "algorithm": "mod",
+                "algorithm_args": [
+                  16
+                ]
               }
             ]
           },
@@ -87,9 +101,12 @@
             "name": "test_double_sharding",
             "status": "ACTIVE",
             "zskeys": [
-                "area_id"
+              "area_id"
             ],
             "zs_algorithm": "mod",
+            "zs_algorithm_args": [
+              16
+            ],
             "strategies": [
               {
                 "backends": [
@@ -100,7 +117,10 @@
                 "sharding_columns": [
                   "user_id"
                 ],
-                "algorithm": "mod"
+                "algorithm": "mod",
+                "algorithm_args": [
+                  16
+                ]
               },
               {
                 "backends": [
@@ -111,7 +131,10 @@
                 "sharding_columns": [
                   "area_id"
                 ],
-                "algorithm": "mod"
+                "algorithm": "mod",
+                "algorithm_args": [
+                  16
+                ]
               }
             ]
           }

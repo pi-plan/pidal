@@ -26,7 +26,7 @@ class Session(object):
         self.stream: IOStream = IOStream(stream)
         self.address: Tuple[str, int] = address
         self.delegate: ConnectionDelegate = delegate
-        self.status: SessionStatus = SessionStatus.INIT
+        self.status: SessionStatus = SessionStatus.SERVING
         self.dserver = dserver
         self.dsession: DSession = dserver.create_session()
 
@@ -60,7 +60,7 @@ class Session(object):
                 execute = Execute(packet.length,
                                   Command(packet.command),
                                   packet.args, packet.query)
-                r = await self.dsession.query(execute)
+                r = await self.dsession.execute(execute)
                 print(r)
         except torio.StreamClosedError:
             logger.warning("client has close with.")

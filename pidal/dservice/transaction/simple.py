@@ -1,11 +1,10 @@
-
 import asyncio
 from typing import Optional
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.database.database import Database
 import pidal.node.result as result
 
-from pidal.dservice.sqlparse.paser import DML, SQL, TCL
+from pidal.dservice.sqlparse.paser import DML, SQL, Select, TCL
 from pidal.dservice.transaction.trans import Trans
 from pidal.lib.snowflake import generator as snowflake
 
@@ -79,10 +78,13 @@ class Simple(Trans):
             return await self.execute_other(sql)
         table = self.db.get_table(str(sql.table))
         nodes = table.get_node(sql)
-        g = []
+        # 查询只需要一个就可以， Table 负责筛选出合适的node
+        if isinstance(sql, Select):
+            nodes = nodes[:1]
         for i in nodes:
             if i not in self.nodes:
                 await self._begin(i)
-            g.append()
+        return await table.execute_dml(sql, self.xid)
+
     async def execute_other(self, sql: SQL) -> result.Result:
         return await self.db.execute_other(sql)

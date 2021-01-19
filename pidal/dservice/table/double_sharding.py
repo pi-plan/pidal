@@ -1,3 +1,4 @@
+from pidal.dservice.backend.backend_manager import BackendManager
 from typing import Dict, List
 
 from pidal.lib.algorithms.factory import Factory as algorithms
@@ -7,6 +8,7 @@ from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
 from pidal.dservice.zone_manager import ZoneManager
+from pidal.node.result import result
 
 
 class DoubleSharding(Table):
@@ -26,6 +28,7 @@ class DoubleSharding(Table):
         self.zskeys = table_conf.zskeys
         self.zs_algorithm = algorithms.new(table_conf.zs_algorithm)
         self.zs_algorithm_args = table_conf.zs_algorithm_args
+        self.backend_manager = BackendManager.get_instance()
         if not table_conf.strategies or len(table_conf.strategies) != 2:
             raise Exception("Sharding table need two strategy.")
         self._parse_strategies(table_conf.strategies)
@@ -49,9 +52,20 @@ class DoubleSharding(Table):
             for i in strategy.backends:
                 self.backends[index][i.number] = i  # type: ignore
 
-    def query(self, sql, trans_id: int = 0):
-        """ 如果是在事务中需要传入 trans_id """
-        pass
+    def get_name(self) -> str:
+        return self.name
+
+    def get_type(self) -> DBTableType:
+        return self.type
+
+    def get_status(self) -> RuleStatus:
+        return self.status
+
+    async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
+        node = self.get_node(sql)
+        backend = await self.backend_manager.get_backend(node[0], trans_id)
+        result = await backend.query(sql)
+        return result
 
     def get_node(self, sql: DML) -> List[str]:
         if not sql.table or not sql.column:

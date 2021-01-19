@@ -1,11 +1,13 @@
 from typing import List
 
+from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
 from pidal.dservice.sqlparse.paser import DML
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy
+from pidal.node.result import result
 from pidal.dservice.zone_manager import ZoneManager
 
 
@@ -25,6 +27,7 @@ class Raw(Table):
         self.zskeys = table_conf.zskeys
         self.zs_algorithm = algorithms.new(table_conf.zs_algorithm)
         self.zs_algorithm_args = table_conf.zs_algorithm_args
+        self.backend_manager = BackendManager.get_instance()
         if not table_conf.strategies or len(table_conf.strategies) != 1:
             raise Exception("Raw table need one strategy.")
         self._parse_strategies(table_conf.strategies[0])
@@ -34,6 +37,21 @@ class Raw(Table):
             raise Exception("Raw table need one backends.")
         for i in strategy.backends:
             self.backend = i.node
+
+    def get_name(self) -> str:
+        return self.name
+
+    def get_type(self) -> DBTableType:
+        return self.type
+
+    def get_status(self) -> RuleStatus:
+        return self.status
+
+    async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
+        node = self.get_node(sql)
+        backend = await self.backend_manager.get_backend(node[0], trans_id)
+        result = await backend.query(sql)
+        return result
 
     def get_node(self, sql: DML) -> List[str]:
         if not self.backend:

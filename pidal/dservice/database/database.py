@@ -1,3 +1,4 @@
+from pidal.dservice.table.factory import TableFactory
 from pidal.dservice.sqlparse.paser import DML, SQL
 from typing import Dict, List, Optional
 
@@ -22,8 +23,8 @@ class Database(object):
 
     def create_tables(self):
         for i in self.db_config.tables.values():
-            table = Table(self.zone_manager, i)
-            self.tables[table.name] = table
+            table = TableFactory.new(i.type, self.zone_manager, i)
+            self.tables[table.get_name()] = table
 
     def create_backends(self):
         manager = BackendManager.get_instance()

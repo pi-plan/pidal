@@ -3,10 +3,10 @@ from typing import List
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
-from pidal.dservice.sqlparse.paser import DML
+from pidal.dservice.sqlparse.paser import DML, DMLW
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
-from pidal.meta.model import DBTable, DBTableStrategy
+from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
 from pidal.node.result import result
 from pidal.dservice.zone_manager import ZoneManager
 
@@ -36,7 +36,7 @@ class Raw(Table):
         if not strategy.backends or len(strategy.backends) != 1:
             raise Exception("Raw table need one backends.")
         for i in strategy.backends:
-            self.backend = i.node
+            self.backend = i
 
     def get_name(self) -> str:
         return self.name
@@ -48,12 +48,14 @@ class Raw(Table):
         return self.status
 
     async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
-        node = self.get_node(sql)
-        backend = await self.backend_manager.get_backend(node[0], trans_id)
+        node = self.get_node(sql)[0]
+        backend = await self.backend_manager.get_backend(node.node, trans_id)
+        if isinstance(sql, DMLW):
+            sql.add_pidal(1)  # TODO 管理隐藏字段
         result = await backend.query(sql)
         return result
 
-    def get_node(self, sql: DML) -> List[str]:
+    def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
         if not self.backend:
             raise Exception("can not get backend.")
         return [self.backend]

@@ -2,10 +2,10 @@ import abc
 from typing import List
 
 from pidal.node.result import result
-from pidal.dservice.sqlparse.paser import DML, SQL
+from pidal.dservice.sqlparse.paser import DML
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
-from pidal.meta.model import DBTable
+from pidal.meta.model import DBTable, DBTableStrategyBackend
 from pidal.dservice.zone_manager import ZoneManager
 
 
@@ -23,7 +23,7 @@ class Table(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def get_node(self, sql: DML) -> List[str]:
+    def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
         pass
 
     @abc.abstractmethod

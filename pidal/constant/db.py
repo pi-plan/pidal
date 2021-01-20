@@ -39,3 +39,13 @@ class SessionStatus(enum.IntFlag):
     HANDSHAKED = 8  # 已完成握手认证
     SERVING = 16  # 服务中
     IN_TRANSACTION = 32  # 在事务中
+
+
+@enum.unique
+class TransStatus(enum.IntFlag):
+    INIT = 1  # 完成初始化
+    BEGINNING = 2  # 事务正在启动中
+    ACTIVE = 4  # 事务活动中
+    COMMITING = 8  # 提交中
+    ROLLBACKING = 16  # 回滚中
+    END = 32  # 事务已经结束

@@ -1,9 +1,10 @@
+import asyncio
 from pidal.dservice.backend.backend_manager import BackendManager
 from typing import Dict, List
 
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
-from pidal.dservice.sqlparse.paser import DML
+from pidal.dservice.sqlparse.paser import DML, DMLW, Select
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
@@ -62,12 +63,32 @@ class DoubleSharding(Table):
         return self.status
 
     async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
-        node = self.get_node(sql)
-        backend = await self.backend_manager.get_backend(node[0], trans_id)
+        nodes = self.get_node(sql)
+        if isinstance(sql, Select):
+            nodes = nodes[:1]
+        g = []
+        for node in nodes:
+            g.append(self._execute_dml(node, sql, trans_id))
+        r = await asyncio.gather(*g)
+        # TODO 两个之间的异常处理
+        if len(r) < 2:
+            return r[0]
+        else:
+            for ri in r:
+                if not isinstance(ri, result.OK):
+                    return ri
+            return r[0]
+
+    async def _execute_dml(self, node: DBTableStrategyBackend, sql: DML,
+                           trans_id: int = 0) -> result.Result:
+        backend = await self.backend_manager.get_backend(node.node, trans_id)
+        sql.modify_table(node.prefix + str(node.number))
+        if isinstance(sql, DMLW):
+            sql.add_pidal(1)  # TODO 管理隐藏字段
         result = await backend.query(sql)
         return result
 
-    def get_node(self, sql: DML) -> List[str]:
+    def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
         if not sql.table or not sql.column:
             raise Exception(
                     "SQL needs to contain the sharding fields[{}].".format(
@@ -88,7 +109,7 @@ class DoubleSharding(Table):
             node = self.backends[i].get(sid, None)
             if not node:
                 raise Exception("can not get backend.")
-            result.append(node.node)
+            result.append(node)
         if not result:
             raise Exception(
                     "SQL needs to contain the sharding fields[{}].".format(

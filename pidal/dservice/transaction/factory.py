@@ -1,6 +1,5 @@
+from pidal.dservice.transaction.a2pc import A2PC
 from pidal.dservice.database.database import Database
-from typing import List
-
 from pidal.dservice.transaction.simple import Simple
 from pidal.dservice.transaction.trans import Trans
 
@@ -8,6 +7,7 @@ from pidal.dservice.transaction.trans import Trans
 class TransFactory(object):
     trans_map = {
             "simple": Simple,
+            "a2pc": A2PC,
             }
 
     @classmethod

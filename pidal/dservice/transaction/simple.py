@@ -1,9 +1,12 @@
 import asyncio
+
 from typing import Optional
-from pidal.dservice.backend.backend_manager import BackendManager
-from pidal.dservice.database.database import Database
+
 import pidal.node.result as result
 
+from pidal.constant.db import TransStatus
+from pidal.dservice.backend.backend_manager import BackendManager
+from pidal.dservice.database.database import Database
 from pidal.dservice.sqlparse.paser import DML, SQL, Select, TCL
 from pidal.dservice.transaction.trans import Trans
 from pidal.lib.snowflake import generator as snowflake
@@ -27,13 +30,19 @@ class Simple(Trans):
 
         self.xid = next(snowflake)
         self.backend_manager = BackendManager.get_instance()
+        self.status = TransStatus.INIT
+
+    def get_status(self) -> TransStatus:
+        return self.status
 
     async def begin(self, sql: TCL) -> Optional[result.Result]:
+        self.status = TransStatus.BEGINNING
         if self.nodes:
             g = []
             for i in self.nodes:
                 g.append(self._begin(i))
             await asyncio.gather(*g)
+        self.status = TransStatus.ACTIVE
 
     async def _begin(self, node: str):
         b = await self.backend_manager.get_backend(node, self.xid)
@@ -44,11 +53,13 @@ class Simple(Trans):
             raise e
 
     async def commit(self, sql: TCL) -> Optional[result.Result]:
+        self.status = TransStatus.COMMITING
         if self.nodes:
             g = []
             for i in self.nodes:
                 g.append(self._commit(i))
             await asyncio.gather(*g)
+        self.status = TransStatus.END
 
     async def _commit(self, node: str):
         b = await self.backend_manager.get_backend(node, self.xid)
@@ -59,11 +70,13 @@ class Simple(Trans):
             raise e
 
     async def rollback(self, sql: TCL) -> Optional[result.Result]:
+        self.status = TransStatus.ROLLBACKING
         if self.nodes:
             g = []
             for i in self.nodes:
                 g.append(self._rollback(i))
             await asyncio.gather(*g)
+        self.status = TransStatus.END
 
     async def _rollback(self, node: str):
         b = await self.backend_manager.get_backend(node, self.xid)
@@ -83,7 +96,7 @@ class Simple(Trans):
             nodes = nodes[:1]
         for i in nodes:
             if i not in self.nodes:
-                await self._begin(i)
+                await self._begin(i.node)
         return await table.execute_dml(sql, self.xid)
 
     async def execute_other(self, sql: SQL) -> result.Result:

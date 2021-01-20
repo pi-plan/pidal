@@ -4,7 +4,7 @@ from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.node.result import result
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
-from pidal.dservice.sqlparse.paser import DML
+from pidal.dservice.sqlparse.paser import DML, DMLW
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
@@ -56,12 +56,15 @@ class Sharding(Table):
         return self.status
 
     async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
-        node = self.get_node(sql)
-        backend = await self.backend_manager.get_backend(node[0], trans_id)
+        node = self.get_node(sql)[0]
+        backend = await self.backend_manager.get_backend(node.node, trans_id)
+        sql.modify_table(node.prefix + str(node.number))
+        if isinstance(sql, DMLW):
+            sql.add_pidal(1)  # TODO 管理隐藏字段
         result = await backend.query(sql)
         return result
 
-    def get_node(self, sql: DML) -> List[str]:
+    def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
         if not sql.table or not sql.column:
             raise Exception(
                     "SQL needs to contain the sharding fields[{}].".format(
@@ -82,4 +85,4 @@ class Sharding(Table):
         node = self.backends.get(sid, None)
         if not node:
             raise Exception("can not get backend.")
-        return [node.node]
+        return [node]

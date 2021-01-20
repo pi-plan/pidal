@@ -1,8 +1,8 @@
-from pidal.dservice.table.factory import TableFactory
-from pidal.dservice.sqlparse.paser import DML, SQL
 from typing import Dict, List, Optional
 
-import pidal.node.result as result
+from pidal.node.result import result
+from pidal.dservice.table.factory import TableFactory
+from pidal.dservice.sqlparse.paser import DML, SQL
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.table.table import Table
 from pidal.dservice.zone_manager import ZoneManager
@@ -36,14 +36,17 @@ class Database(object):
         """ 处理非 Query 类型的command  """
         pass
 
-    async def execute_dml(self, sql: DML) -> result.Result:
-        pass
-
-    async def execute_other(self, sql: SQL) -> result.Result:
-        pass
-
     def get_table(self, t: str) -> Table:
         table = self.tables.get(t, None)
         if not table:
             raise Exception("not found table [{}]".format(t))
         return table
+
+    async def execute_dml(self, sql: DML) -> result.Result:
+        if not sql.table:
+            return await self.execute_other(sql)
+        table = self.get_table(str(sql.table))
+        return await table.execute_dml(sql)
+
+    async def execute_other(self, sql: SQL) -> result.Result:
+        pass

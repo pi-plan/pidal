@@ -1,4 +1,5 @@
 import abc
+from pidal.constant.db import TransStatus
 
 from typing import Optional
 
@@ -32,4 +33,8 @@ class Trans(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     async def execute_other(self, sql: SQL) -> result.Result:
+        pass
+
+    @abc.abstractmethod
+    def get_status(self) -> TransStatus:
         pass

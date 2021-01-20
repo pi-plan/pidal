@@ -10,6 +10,8 @@ from sqlparse.sql import Statement
 class SQL(object):
     def __init__(self, raw: Statement):
         self.raw = raw
+        self.raw_where = {}
+        self.new_value = {}
 
     def add_pidal(self, _: int):  # type: ignore
         pass
@@ -39,8 +41,7 @@ class SQL(object):
     def modify_table(self, name: str):
         self.table[0].value = name
 
-    @staticmethod
-    def _parse_comparison(s: Comparison):
+    def _parse_comparison(self, s: Comparison):
         column = None
         for i in s.tokens:
             if isinstance(i, Token) and i.ttype is token.Whitespace:
@@ -53,6 +54,7 @@ class SQL(object):
             if i.ttype is token.Comparison:
                 if i.value != "=":
                     return
+            self.raw_where[column] = i.value
             if i.ttype in token.Number:
                 return (column, i.value)
 
@@ -148,6 +150,9 @@ class Select(DML):
     def __init__(self, raw: Statement):
         self.table_name: str
         self.column: Dict[str, int]
+        self.for_update: bool = False
+        self.raw_where = {}
+        self.new_value = {}
 
         self.raw = raw
         self.parse()
@@ -156,13 +161,34 @@ class Select(DML):
         self.parse_table_name()
         where = self._get_where_part()
         self.column = self.parse_where(where)
+        self._parse_for_update(where)
+
+    def _parse_for_update(self, where):
+        tokens = []
+        for v in where:
+            if v.ttype in (token.Keyword, token.DML):
+                tokens.append(v)
+        if len(tokens) < 2:
+            self.for_update = False
+            return
+        if tokens[-1].value == "UPDATE" and tokens[-2].value == "FOR":
+            self.for_update = True
+
+    def is_for_update(self) -> bool:
+        return self.for_update
 
 
-class Delete(DML):
+class DMLW(DML):
+    pass
+
+
+class Delete(DMLW):
 
     def __init__(self, raw: Statement):
         self.table_name: str
         self.column: Dict[str, int]
+        self.raw_where = {}
+        self.new_value = {}
 
         self.raw = raw
         self.parse()
@@ -181,11 +207,13 @@ class Delete(DML):
                     item.insert_before(1, v)
 
 
-class Update(DML):
+class Update(DMLW):
 
     def __init__(self, raw: Statement):
         self.table_name: str
         self.column: Dict[str, int]
+        self.raw_where = {}
+        self.new_value = {}
 
         self.raw = raw
         self.parse()
@@ -195,10 +223,44 @@ class Update(DML):
         where = self._get_where_part()
         self.column = self.parse_where(where)
 
+    def parse_table_name(self):
+        fl = self._get_from_part()
+        table = self.extract_table_identifiers(fl)
+        self.table = table[0]
+        self._parse_new_values(table[1:])
+
+    def _parse_new_values(self, steam):
+        for i in steam:
+            new_set = []
+            for j in i.tokens:
+                if j.ttype is token.Whitespace:
+                    continue
+                new_set.append(j)
+
+            if not isinstance(new_set[0], Identifier) or \
+                    new_set[1].value != "=":
+                raise Exception("pidal  not support sql.")
+            self.new_value[new_set[0].value] = new_set[2]
+
     def _get_from_part(self):
         for i, item in enumerate(self.raw.tokens):
             if item.ttype is token.DML and item.value.upper() == "UPDATE":
                 return self.raw.tokens[i + 1:]
+
+    @staticmethod
+    def extract_table_identifiers(token_stream):
+        tables = []
+        for item in token_stream:
+            if isinstance(item, Where):
+                break
+            if isinstance(item, IdentifierList):
+                for identifier in item.get_identifiers():
+                    tables.append(identifier)
+            elif isinstance(item, Identifier):
+                tables.append(item)
+            elif isinstance(item, Comparison):
+                tables.append(item)
+        return tables
 
     def add_pidal(self, value: int):
         where = None
@@ -213,11 +275,13 @@ class Update(DML):
             self.raw.insert_before(where, i)
 
 
-class Insert(DML):
+class Insert(DMLW):
 
     def __init__(self, raw: Statement):
         self.table_name: str
         self.column: Dict[str, int]
+        self.raw_where = {}
+        self.new_value = {}
 
         self.table_f: Function
         self.values: Values
@@ -384,9 +448,10 @@ if __name__ == "__main__":
     start transaction read only;
     commit;
     rollback;
-    select id, name from a where id = 3 and age between 1, 10 and ( id >= 1 );
+    select id, name from a where id = 3 and (age = 12) and ( id >= 1 );
     select * from a where id = 3 for update;
-    update a set `name` = "dd" where id = 1;
+    update a set `name` = "dd", where id = 1;
+    update a set `name` = "dd", age = 23, v = `v` + 1 where id = 1;
     insert into a (id, name) values (1, "ff");
     delete from a where id = 3 and status = 0
     """

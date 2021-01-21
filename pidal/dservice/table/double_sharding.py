@@ -1,7 +1,8 @@
 import asyncio
-from pidal.dservice.backend.backend_manager import BackendManager
 from typing import Dict, List
 
+from pidal.dservice.table.tools import Tools
+from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
 from pidal.dservice.sqlparse.paser import DML, DMLW, Select
@@ -29,10 +30,25 @@ class DoubleSharding(Table):
         self.zskeys = table_conf.zskeys
         self.zs_algorithm = algorithms.new(table_conf.zs_algorithm)
         self.zs_algorithm_args = table_conf.zs_algorithm_args
+        self.lock_key = table_conf.lock_key
         self.backend_manager = BackendManager.get_instance()
         if not table_conf.strategies or len(table_conf.strategies) != 2:
             raise Exception("Sharding table need two strategy.")
         self._parse_strategies(table_conf.strategies)
+        self._parse_table_scheme()
+
+    def _parse_table_scheme(self):
+        loop = asyncio.get_event_loop()
+        node = self.backends[0].get(list(self.backends[0].keys())[0])
+        backend = loop.run_until_complete(
+                self.backend_manager.get_backend(node.node))
+
+        _table = node.prefix + str(node.number)
+        self.column_default = loop.run_until_complete(
+                Tools.get_column_default(backend, _table))
+
+        self.lock_columns = loop.run_until_complete(
+                Tools.get_lock_columns(backend, _table, self.lock_key))
 
     def _parse_strategies(self, strategies: List[DBTableStrategy]):
         self.sharding_columns = []

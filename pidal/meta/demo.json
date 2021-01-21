@@ -59,6 +59,7 @@
             "zs_algorithm_args": [
               16
             ],
+            "lock_key": "PRIMARY",
             "strategies": [
               {
                 "backends": [
@@ -78,6 +79,7 @@
             "zs_algorithm_args": [
               16
             ],
+            "lock_key": "PRIMARY",
             "strategies": [
               {
                 "backends": [
@@ -107,6 +109,7 @@
             "zs_algorithm_args": [
               16
             ],
+            "lock_key": "PRIMARY",
             "strategies": [
               {
                 "backends": [

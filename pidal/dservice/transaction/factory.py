@@ -1,4 +1,4 @@
-from pidal.dservice.transaction.a2pc import A2PC
+from pidal.dservice.transaction.a2pc.a2pc import A2PC
 from pidal.dservice.database.database import Database
 from pidal.dservice.transaction.simple import Simple
 from pidal.dservice.transaction.trans import Trans

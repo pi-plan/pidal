@@ -95,7 +95,7 @@ class DBConfig(object):
 class DBTable(object):
     def __init__(self, type: DBTableType, name: str,
                  status: RuleStatus, zskeys: List[str], zs_algorithm: str,
-                 zs_algorithm_args: Optional[List[Any]],
+                 zs_algorithm_args: Optional[List[Any]], lock_key: str,
                  strategies: List['DBTableStrategy']):
         self.type: DBTableType = type
         self.name: str = name
@@ -103,6 +103,9 @@ class DBTable(object):
         self.zskeys = zskeys
         self.zs_algorithm = zs_algorithm
         self.zs_algorithm_args = zs_algorithm_args
+        # 数据写入的时候负责锁的索引，
+        # SHOW KEYS FROM table where Non_unique = 0 and Key_name = "PRIMARY";
+        self.lock_key: str = lock_key
         self.strategies: List[DBTableStrategy] = strategies
 
     @classmethod
@@ -120,7 +123,8 @@ class DBTable(object):
         else:
             status = RuleStatus.name2value(conf["status"])
         dbt = cls(type, conf["name"], status, conf["zskeys"],
-                  conf["zs_algorithm"], conf["zs_algorithm_args"], strategies)
+                  conf["zs_algorithm"], conf["zs_algorithm_args"],
+                  conf["lock_key"], strategies)
 
         return dbt
 

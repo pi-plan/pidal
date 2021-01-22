@@ -37,3 +37,7 @@ class Table(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_status(self) -> RuleStatus:
         pass
+
+    @abc.abstractclassmethod
+    def get_lock_columns(self) -> List[str]:
+        pass

@@ -76,3 +76,6 @@ class Raw(Table):
         if not self.backend:
             raise Exception("can not get backend.")
         return [self.backend]
+
+    def get_lock_columns(self) -> List[str]:
+        return self.lock_columns

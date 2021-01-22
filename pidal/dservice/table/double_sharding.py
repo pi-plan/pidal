@@ -39,7 +39,7 @@ class DoubleSharding(Table):
 
     def _parse_table_scheme(self):
         loop = asyncio.get_event_loop()
-        node = self.backends[0].get(list(self.backends[0].keys())[0])
+        node = list(self.backends[0].values())[0]
         backend = loop.run_until_complete(
                 self.backend_manager.get_backend(node.node))
 
@@ -131,3 +131,6 @@ class DoubleSharding(Table):
                     "SQL needs to contain the sharding fields[{}].".format(
                         ",".join(self.sharding_algorithm[0])))
         return result
+
+    def get_lock_columns(self) -> List[str]:
+        return self.lock_columns

@@ -141,7 +141,25 @@
               }
             ]
           }
-        ]
+        ],
+        "a2pc": {
+          "servers": [
+            {
+              "host": "127.0.0.1",
+              "port": 8080
+            }
+          ],
+          "backends": [
+            {
+              "dsn": "mysql://root:@127.0.0.1:3306/test",
+              "minimum_pool_size": 1,
+              "maximum_pool_size": 100,
+              "acquire_timeout": 5,
+              "wait_time": 100
+            }
+          ],
+          "mode": "single"
+        }
       }
     }
   ]

@@ -1,8 +1,9 @@
 import re
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from pidal.constant import DBNodeType, DBTableType, RuleStatus
+from pidal.dservice.transaction.a2pc.client.constant import A2PCMode
 
 TABLE_NAME_EXP_RE = re.compile(r"^([\w.]+)_{(\d+)\,\s*(\d+)\,*\s*(\d?)}$")
 TABLE_NAME_NUM_RE = re.compile(r"^([\w.]+)_(\d+)$")
@@ -59,6 +60,7 @@ class DBConfig(object):
         self.source_replica_enable: bool = source_replica_enable
         self.algorithm = algorithm
         self.algorithm_args = algorithm_args
+        self.a2pc: Optional[A2PC] = None
         self.transaction_mod = transaction_mod
         self.nodes: Dict[str, DBNode] = dict()
         self.tables: Dict[str, DBTable] = dict()
@@ -89,7 +91,48 @@ class DBConfig(object):
             if table.name in dbc.tables.keys():
                 raise Exception("[{}] table has defined.".format(table.name))
             dbc.tables[table.name] = table
+        a2pc = conf.get("a2pc", None)
+        if a2pc:
+            dbc.a2pc = A2PC.new_from_dict(a2pc)
         return dbc
+
+
+class A2PCBackend(object):
+    def __init__(self, dsn: str, minimum_pool_size: int = 1,
+                 maximum_pool_size: int = 10, acquire_timeout: int = 5,
+                 wait_time: int = 100):
+        self.dsn = dsn
+        self.minimum_pool_size = minimum_pool_size
+        self.maximum_pool_size = maximum_pool_size
+        self.acquire_timeout = acquire_timeout
+        self.wait_time = wait_time
+
+
+class A2PC(object):
+    def __init__(self, mode: A2PCMode, servers: List[Tuple[str, int]],
+                 backends: List[A2PCBackend]):
+        self.mode = mode
+        self.servers = servers
+        self.backends = backends
+
+    @classmethod
+    def new_from_dict(cls, conf: dict) -> 'A2PC':
+        for i in ["mode", "servers", "backends"]:
+            if i not in conf.keys():
+                raise Exception("A2PC need {} config.".format(i))
+        mode = A2PCMode.name2value(conf["mode"])
+        servers = []
+        for i in conf["servers"]:
+            servers.append((i["host"], i["port"]))
+        backends = []
+        for i in conf["backends"]:
+            minimum_pool_size = max(1, conf.get("minimum_pool_size", 0))
+            maximum_pool_size = max(1, conf.get("maximum_pool_size", 0))
+            acquire_timeout = max(5, conf.get("acquire_timeout", 0))
+            wait_time = max(5, conf.get("wait_time", 0))
+            backends.append(A2PCBackend(i["dsn"], minimum_pool_size,
+                            maximum_pool_size, acquire_timeout, wait_time))
+        return cls(mode, servers, backends)
 
 
 class DBTable(object):

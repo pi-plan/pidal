@@ -38,7 +38,7 @@ class Sharding(Table):
 
     def _parse_table_scheme(self):
         loop = asyncio.get_event_loop()
-        node = self.backends.get(list(self.backends.keys())[0])
+        node = list(self.backends.values())[0]
         backend = loop.run_until_complete(
                 self.backend_manager.get_backend(node.node))
 
@@ -103,3 +103,6 @@ class Sharding(Table):
         if not node:
             raise Exception("can not get backend.")
         return [node]
+
+    def get_lock_columns(self) -> List[str]:
+        return self.lock_columns

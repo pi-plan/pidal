@@ -198,6 +198,9 @@ class Delete(DMLW):
         where = self._get_where_part()
         self.column = self.parse_where(where)
 
+    def get_where(self):
+        return self._get_where_part()
+
     def add_pidal(self, _: int):  # type: ignore
         for item in self.raw.tokens:
             if item.is_group and isinstance(item, Where):
@@ -222,6 +225,9 @@ class Update(DMLW):
         self.parse_table_name()
         where = self._get_where_part()
         self.column = self.parse_where(where)
+
+    def get_where(self):
+        return self._get_where_part()
 
     def parse_table_name(self):
         fl = self._get_from_part()

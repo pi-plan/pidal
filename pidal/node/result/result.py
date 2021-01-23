@@ -1,6 +1,6 @@
 import abc
 
-from typing import Any, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 from pidal.node.result.command import Command
 
@@ -51,6 +51,18 @@ class ResultSet(Result):
         self.field_count: int = field_count
         self.descriptions: List[ResultDescription] = descriptions
         self.rows: List[Tuple[Any]] = rows
+
+    def to_dict(self) -> List[Dict[str, Any]]:
+        columns = []
+        for d in self.descriptions:
+            columns.append(d.org_name if d.org_name else d.name)
+        result = []
+        for r in self.rows:
+            row = {}
+            for i, c in enumerate(r):
+                row[columns[i]] = c
+            result.append(row)
+        return result
 
     def to_mysql(self):
         pass

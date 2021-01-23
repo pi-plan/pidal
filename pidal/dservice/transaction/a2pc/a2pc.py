@@ -1,11 +1,13 @@
 import asyncio
-from pidal.dservice.transaction.a2pc.client.client import A2PClient
-from pidal.constant.db import TransStatus
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
+
+import sqlparse
 
 import pidal.node.result as result
 
+from pidal.dservice.transaction.a2pc.client.client import A2PClient
+from pidal.constant.db import TransStatus
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.database.database import Database
 from pidal.dservice.sqlparse.paser import DML, DMLW, Delete, Insert, SQL, Select,\
@@ -29,7 +31,7 @@ class A2PC(Trans):
         self.status = TransStatus.INIT
 
         self.a2pc_client = A2PClient.get_instance()
-        self._reundo_log: Dict[Dict[str]] = {}
+        self._reundo_log: Dict[Dict[str, Any], Dict[str, Any]] = {}
 
     def get_status(self) -> TransStatus:
         return self.status
@@ -87,7 +89,24 @@ class A2PC(Trans):
         if lock.status != 0:
             raise Exception("{} acquire lock fail: {}", str(sql.raw), lock.msg)
 
-        return await table.execute_dml(sql, self.xid)
+        r = await table.execute_dml(sql, self.xid)
+        if isinstance(r, result.ResultSet):
+            self._record_old_data(lock_keys, r)
+        return r
+
+    def _record_old_data(self, lock_columns: List[str],
+                         old_raw: result.ResultSet):
+        lock_keys
+        exist = self._reundo_log.get(lock_keys, None)
+        old_data = old_raw.to_dict()
+        if not old_data or len(old_data) != 1:
+            raise Exception("data must unique.")
+        if exist is None:
+            self._reundo_log[lock_keys] = {
+                    "undo": old_data[0],
+                    "xid": self.xid}
+        elif exist["undo"] != old_data:
+            raise Exception("local data record error.")
 
     async def execute_update(self, sql: Update) -> result.Result:
         table = self.db.get_table(str(sql.table))
@@ -109,7 +128,22 @@ class A2PC(Trans):
         if lock.status != 0:
             raise Exception("{} acquire lock fail: {}", str(sql.raw), lock.msg)
 
-    def _get_update_undo_log(sql: Update):
+    async def _get_update_undo_log(self, lock_keys: Dict[str, Any],
+                                   sql: Update) -> Optional[result.Error]:
+        log = self._reundo_log.get(lock_keys, None)
+        if log is None:
+            table = self.db.get_table(str(sql.table))
+            sl = sqlparse.parse("select * from {} ".format(str(sql.table)))[0]
+            sl.insert_after(len(sl.tokens), sql.get_where())
+            old_raw = await table.execute_dml(Select(sl))
+            if isinstance(old_raw, result.Error):
+                return old_raw
+            elif not isinstance(old_raw, result.ResultSet):
+                raise Exception("can`t get undo log.")
+
+            self._record_old_data(lock_keys, old_raw)
+            log = self._reundo_log.get(lock_keys)
+        log["redo"] = sql.new_value
 
     async def execute_insert(self, sql: Insert) -> result.Result:
         pass

@@ -69,7 +69,7 @@ class Raw(Table):
         backend = await self.backend_manager.get_backend(node.node, trans_id)
         if isinstance(sql, DMLW):
             sql.add_pidal(1)  # TODO 管理隐藏字段
-        result = await backend.query(sql)
+        result = await backend.query(str(sql))
         return result
 
     def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:

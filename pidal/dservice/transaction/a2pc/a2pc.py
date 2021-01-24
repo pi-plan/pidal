@@ -6,14 +6,23 @@ import sqlparse
 
 import pidal.node.result as result
 
+from pidal.logging import logger
+from pidal.dservice.table.raw import Raw
+from pidal.dservice.table.table import Table
+from pidal.meta.model import DBTableStrategyBackend
+from pidal.dservice.transaction.a2pc.client.constant import A2PCOperation,\
+        A2PCStatus
 from pidal.dservice.transaction.a2pc.client.client import A2PClient
 from pidal.constant.db import TransStatus
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.database.database import Database
-from pidal.dservice.sqlparse.paser import DML, DMLW, Delete, Insert, SQL, Select,\
-        TCL, Update
+from pidal.dservice.sqlparse.paser import DML, Delete, Insert, SQL, Select,\
+        TCL, Update, DMLW
 from pidal.dservice.transaction.trans import Trans
 from pidal.lib.snowflake import generator as snowflake
+from pidal.dservice.transaction.a2pc.reundo.reundo_log import ReUnDoLog
+from pidal.dservice.transaction.a2pc.reundo.factory import \
+        Factory as ReUnFactory
 
 
 class A2PC(Trans):
@@ -31,7 +40,7 @@ class A2PC(Trans):
         self.status = TransStatus.INIT
 
         self.a2pc_client = A2PClient.get_instance()
-        self._reundo_log: Dict[Dict[str, Any], Dict[str, Any]] = {}
+        self._reundo_log: Dict[str, Dict[Dict[str, Any], ReUnDoLog]] = {}
 
     def get_status(self) -> TransStatus:
         return self.status
@@ -75,7 +84,7 @@ class A2PC(Trans):
             return await table.execute_dml(sql, self.xid)
         # 给数据上锁
         if not sql.raw_where:
-            raise Exception("select must where.")
+            raise Exception("select must contain [where].")
 
         lock_keys = {}
         node = table.get_node(sql)
@@ -91,27 +100,25 @@ class A2PC(Trans):
 
         r = await table.execute_dml(sql, self.xid)
         if isinstance(r, result.ResultSet):
-            self._record_old_data(lock_keys, r)
+            self._record_undo_data(table.get_name(), lock_keys, r)
         return r
 
-    def _record_old_data(self, lock_columns: List[str],
-                         old_raw: result.ResultSet):
-        lock_keys
-        exist = self._reundo_log.get(lock_keys, None)
-        old_data = old_raw.to_dict()
-        if not old_data or len(old_data) != 1:
-            raise Exception("data must unique.")
-        if exist is None:
-            self._reundo_log[lock_keys] = {
-                    "undo": old_data[0],
-                    "xid": self.xid}
-        elif exist["undo"] != old_data:
-            raise Exception("local data record error.")
+    def _record_undo_data(self, table: str, lock_keys: Dict[str, Any],
+                          old_raw: Optional[result.ResultSet]):
+        table_logs = self._reundo_log.get(table, None)
+        if not table_logs:
+            table_logs = {}
+            self._reundo_log[table] = table_logs
+        log = table_logs.get(lock_keys, None)
+        if not log:
+            log = ReUnFactory.new("unique", self.xid, lock_keys, table)
+            self._reundo_log[table][lock_keys] = log
+        log.set_undo(old_raw)
 
     async def execute_update(self, sql: Update) -> result.Result:
         table = self.db.get_table(str(sql.table))
         if not sql.raw_where:
-            raise Exception("select must where.")
+            raise Exception("update must contain [where].")
 
         lock_keys = {}
         node = table.get_node(sql)
@@ -120,36 +127,208 @@ class A2PC(Trans):
                 raise Exception("lock data need [{}] column.".format(i))
             lock_keys[i] = sql.raw_where[i]
 
-        undo_log = {}
-        # 先计算好数据在上锁。减少锁定时间。
-        lock = await self.a2pc_client.acquire_lock(self.xid, node[0].node,
-                                                   table.get_name(), lock_keys,
-                                                   str(sql.raw))
-        if lock.status != 0:
-            raise Exception("{} acquire lock fail: {}", str(sql.raw), lock.msg)
+        error = await self._update_undo_log(lock_keys, sql)
+        if not error:
+            return error  # type: ignore
+        reundo_sql = self.reundo_log_generator(table.get_name(), lock_keys)
+        if not reundo_sql:
+            raise Exception("can not get redo undo log.")
+        before_sql = "begin;" + reundo_sql
+        c = []
+        for i in node:
+            c.append(self._execute_update(table, i, before_sql, sql))
 
-    async def _get_update_undo_log(self, lock_keys: Dict[str, Any],
-                                   sql: Update) -> Optional[result.Error]:
-        log = self._reundo_log.get(lock_keys, None)
+        # 先计算好数据在上锁。减少锁定时间。
+        lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
+                                               table.get_name(), lock_keys,
+                                               str(sql.raw))
+        c.append(lock_c)
+        r = await asyncio.gather(*c)
+        lock = r[-1]
+        r = r[:-1]
+        ending_sql = "COMMIT"
+        return_v = None
+        if lock.status != 0:
+            logger.warning("{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+            ending_sql = "ROLLBACK"
+            return_v = result.Error(1000, "{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+        if any([isinstance(i, result.Error) for i in r]):
+            errors = [i for i in r if isinstance(i, result.Error)]
+            for i in errors:
+                logger.warning("{} error with code[{}],msg: {}".format(
+                                 str(sql.raw), i.error_code, i.message))
+            ending_sql = "ROLLBACK"
+            return_v = errors[0]
+        c = []
+        for i in node:
+            c.append(self._execute_ending_sql(ending_sql, i))
+
+        await asyncio.gather(*c)
+        # 如果在 rollback 的时候异常，抛错给 app，即使数据库没有 rollback，
+        # 也会在超时机制下回滚。 backend 遇到异常会关闭 session 触发 mysql
+        # 的超时
+        # 如果在 commit 的时候出现异常，返回错误给客户端，客户端可以重试，
+        # 成功就走正常流程，或者选择回滚，回滚就走事务回滚流程
+        if ending_sql == "ROLLBACK":
+            return return_v  # type: ignore
+        return result.OK(1, 0, 2, 0, "", False)
+
+    async def _execute_ending_sql(self, ending_sql: str,
+                                  node: DBTableStrategyBackend):
+        backend = await self.backend_manager.get_backend(node.node, self.xid)
+        if ending_sql == "ROLLBACK":
+            return await backend.rollback()
+        return await backend.commit()
+
+    async def _execute_update(self, table: Table, node: DBTableStrategyBackend,
+                              before_sql: str,
+                              sql: DMLW) -> result.Result:
+        sql.add_pidal(1)
+        if isinstance(table, Raw):
+            backend = await self.backend_manager.get_backend(node.node,
+                                                             self.xid)
+            return await backend.query(before_sql + str(sql))
+        backend = await self.backend_manager.get_backend(node.node, self.xid)
+        sql.modify_table(node.prefix + str(node.number))
+        return await backend.query(before_sql + str(sql))
+
+    async def _update_undo_log(self, lock_keys: Dict[str, Any],
+                               sql: Update) -> Optional[result.Error]:
+        table = self.db.get_table(str(sql.table))
+        table_logs = self._reundo_log.get(table.get_name(), None)
+
+        if table_logs is None:
+            table_logs = {}
+            self._reundo_log[table.get_name()] = table_logs
+        log = table_logs.get(lock_keys, None)
+
         if log is None:
-            table = self.db.get_table(str(sql.table))
-            sl = sqlparse.parse("select * from {} ".format(str(sql.table)))[0]
+            # 获取 undo log 并获取本地锁。
+            sl = sqlparse.parse("select * from {} for update".format(
+                str(sql.table)))[0]
             sl.insert_after(len(sl.tokens), sql.get_where())
-            old_raw = await table.execute_dml(Select(sl))
+            old_raw = await table.execute_dml(Select(sl), self.xid)
             if isinstance(old_raw, result.Error):
                 return old_raw
             elif not isinstance(old_raw, result.ResultSet):
                 raise Exception("can`t get undo log.")
 
-            self._record_old_data(lock_keys, old_raw)
-            log = self._reundo_log.get(lock_keys)
-        log["redo"] = sql.new_value
+            self._record_undo_data(table.get_name(), lock_keys, old_raw)
+            log = self._reundo_log[table.get_name()][lock_keys]
+        log.set_redo(sql.new_value, A2PCOperation.UPDATE)
+
+    def reundo_log_generator(self, table: str, lock_keys: Dict[str, Any])\
+            -> Optional[str]:
+        table_logs = self._reundo_log.get(table, None)
+
+        if table_logs is None:
+            return None
+        log = table_logs.get(lock_keys, None)
+
+        if log is None:
+            return None
+
+        return log.to_sql(A2PCStatus.ACTIVE)
 
     async def execute_insert(self, sql: Insert) -> result.Result:
         pass
 
+    async def _insert_undo_log(self, lock_keys: Dict[str, Any],
+                               sql: Insert) -> Optional[result.Error]:
+        table = self.db.get_table(str(sql.table))
+        table_logs = self._reundo_log.get(table.get_name(), None)
+
+        if table_logs is None:
+            table_logs = {}
+            self._reundo_log[table.get_name()] = table_logs
+        log = table_logs.get(lock_keys, None)
+
+        if log is None:
+            self._record_undo_data(table.get_name(), lock_keys, None)
+            log = self._reundo_log[table.get_name()][lock_keys]
+        log.set_redo(sql.new_value, A2PCOperation.INSERT)
+
     async def execute_delete(self, sql: Delete) -> result.Result:
-        pass
+        table = self.db.get_table(str(sql.table))
+        if not sql.raw_where:
+            raise Exception("delete must contain [where].")
+
+        lock_keys = {}
+        node = table.get_node(sql)
+        for i in table.get_lock_columns():
+            if i not in sql.raw_where.keys():
+                raise Exception("lock data need [{}] column.".format(i))
+            lock_keys[i] = sql.raw_where[i]
+
+        error = await self._delete_undo_log(lock_keys, sql)
+        if not error:
+            return error  # type: ignore
+        reundo_sql = self.reundo_log_generator(table.get_name(), lock_keys)
+        if not reundo_sql:
+            raise Exception("can not get redo undo log.")
+        before_sql = "begin;" + reundo_sql
+        c = []
+        for i in node:
+            c.append(self._execute_update(table, i, before_sql, sql))
+
+        # 先计算好数据在上锁。减少锁定时间。
+        lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
+                                               table.get_name(), lock_keys,
+                                               str(sql.raw))
+        c.append(lock_c)
+        r = await asyncio.gather(*c)
+        lock = r[-1]
+        r = r[:-1]
+        ending_sql = "COMMIT"
+        return_v = None
+        if lock.status != 0:
+            logger.warning("{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+            ending_sql = "ROLLBACK"
+            return_v = result.Error(1000, "{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+        if any([isinstance(i, result.Error) for i in r]):
+            errors = [i for i in r if isinstance(i, result.Error)]
+            for i in errors:
+                logger.warning("{} error with code[{}],msg: {}".format(
+                                 str(sql.raw), i.error_code, i.message))
+            ending_sql = "ROLLBACK"
+            return_v = errors[0]
+        c = []
+        for i in node:
+            c.append(self._execute_ending_sql(ending_sql, i))
+
+        await asyncio.gather(*c)
+        if ending_sql == "ROLLBACK":
+            return return_v  # type: ignore
+        return result.OK(1, 0, 2, 0, "", False)
+
+    async def _delete_undo_log(self, lock_keys: Dict[str, Any],
+                               sql: Delete) -> Optional[result.Error]:
+        table = self.db.get_table(str(sql.table))
+        table_logs = self._reundo_log.get(table.get_name(), None)
+
+        if table_logs is None:
+            table_logs = {}
+            self._reundo_log[table.get_name()] = table_logs
+        log = table_logs.get(lock_keys, None)
+
+        if log is None:
+            # 获取 undo log 并获取本地锁。
+            sl = sqlparse.parse("select * from {} for update".format(
+                str(sql.table)))[0]
+            sl.insert_after(len(sl.tokens), sql.get_where())
+            old_raw = await table.execute_dml(Select(sl), self.xid)
+            if isinstance(old_raw, result.Error):
+                return old_raw
+            elif not isinstance(old_raw, result.ResultSet):
+                raise Exception("can`t get undo log.")
+
+            self._record_undo_data(table.get_name(), lock_keys, old_raw)
+            log = self._reundo_log[table.get_name()][lock_keys]
+        log.set_redo(None, A2PCOperation.DELETE)
 
     async def execute_other(self, sql: SQL) -> result.Result:
         return await self.db.execute_other(sql)

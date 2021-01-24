@@ -29,11 +29,11 @@ class Connection(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def query(self, sql) -> result.Result:
+    async def query(self, sql: str) -> result.Result:
         pass
 
     @abc.abstractmethod
-    async def execute(self, sql) -> result.Result:
+    async def execute(self, sql: str) -> result.Result:
         pass
 
     @abc.abstractmethod

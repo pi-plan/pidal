@@ -8,7 +8,7 @@ class A2PCMode(enum.IntEnum):
     PERCOLATOR = 3  # Percolator 事务模型，解决数据可见性问题。
 
     @classmethod
-    def name2value(cls, name: str) -> 'A2PCMod':
+    def name2value(cls, name: str) -> 'A2PCMode':
         for member in list(cls):
             if member.name == name.upper():
                 return member
@@ -21,3 +21,17 @@ class A2PCAction(enum.IntEnum):
     ACQUIRE_LOCK = 1
     COMMIT = 2
     ROLLBACK = 3
+
+
+@enum.unique
+class A2PCStatus(enum.IntEnum):
+    ACTIVE = 1  # 事务活跃状态
+    COMMIT = 2  # 事务提交
+    ROLLBACK = 3  # 事务回滚
+
+
+@enum.unique
+class A2PCOperation(enum.Enum):
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    INSERT = "INSERT"

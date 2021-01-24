@@ -48,11 +48,11 @@ class AIOMySQL(Connection):
 
     async def commit(self):
         await self._ensure_connected()
-        await self._conn.begin()
+        await self._conn.commit()
 
     async def rollback(self):
         await self._ensure_connected()
-        await self._conn.begin()
+        await self._conn.rollback()
 
     async def query(self, sql) -> result.Result:
         try:

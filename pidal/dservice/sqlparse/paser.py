@@ -225,9 +225,15 @@ class Update(DMLW):
         self.parse_table_name()
         where = self._get_where_part()
         self.column = self.parse_where(where)
+        self.get_where()
 
     def get_where(self):
-        return self._get_where_part()
+        where = self._get_where_part()
+        for i in where.tokens:
+            if i.ttype == token.Punctuation and i.value == ";":
+                index = where.tokens.index(i)
+                where.tokens = where.tokens[:index]
+        return where
 
     def parse_table_name(self):
         fl = self._get_from_part()

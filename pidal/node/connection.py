@@ -1,4 +1,8 @@
 import abc
+from typing import Union, Optional
+
+from aiomysql.cursors import DictCursor
+from pymysql.connections import MySQLResult
 
 import pidal.node.result as result
 
@@ -29,6 +33,10 @@ class Connection(abc.ABC):
         pass
 
     @abc.abstractmethod
+    async def batch(self, sql) -> Union[DictCursor, result.Error]:
+        pass
+
+    @abc.abstractmethod
     async def query(self, sql: str) -> result.Result:
         pass
 
@@ -42,4 +50,9 @@ class Connection(abc.ABC):
 
     @abc.abstractmethod
     def is_closed(self) -> bool:
+        pass
+
+    @abc.abstractmethod
+    def read_result(self, _result: Optional[MySQLResult] = None) -> \
+            result.Result:
         pass

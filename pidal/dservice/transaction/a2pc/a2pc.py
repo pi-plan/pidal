@@ -233,7 +233,61 @@ class A2PC(Trans):
         return log.to_sql(A2PCStatus.ACTIVE)
 
     async def execute_insert(self, sql: Insert) -> result.Result:
-        pass
+        table = self.db.get_table(str(sql.table))
+        if not sql.raw_where:
+            raise Exception("delete must contain [where].")
+
+        lock_keys = {}
+        node = table.get_node(sql)
+        for i in table.get_lock_columns():
+            if i not in sql.new_value.keys():
+                raise Exception("lock data need [{}] column.".format(i))
+            lock_keys[i] = sql.raw_where[i]
+
+        error = await self._insert_undo_log(lock_keys, sql)
+        if not error:
+            return error  # type: ignore
+        reundo_sql = self.reundo_log_generator(table.get_name(), lock_keys)
+        if not reundo_sql:
+            raise Exception("can not get redo undo log.")
+        before_sql = "begin;" + reundo_sql
+        c = []
+        for i in node:
+            c.append(self._execute_update(table, i, before_sql, sql))
+
+        # 先计算好数据在上锁。减少锁定时间。
+        lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
+                                               table.get_name(), lock_keys,
+                                               str(sql.raw))
+        c.append(lock_c)
+        r = await asyncio.gather(*c)
+        lock = r[-1]
+        r = r[:-1]
+        ending_sql = "COMMIT"
+        return_v = None
+        if lock.status != 0:
+            logger.warning("{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+            ending_sql = "ROLLBACK"
+            return_v = result.Error(1000, "{} acquire lock fail: {}".format(
+                             str(sql.raw), lock.msg))
+        if any([isinstance(i, result.Error) for i in r]):
+            errors = [i for i in r if isinstance(i, result.Error)]
+            for i in errors:
+                logger.warning("{} error with code[{}],msg: {}".format(
+                                 str(sql.raw), i.error_code, i.message))
+            ending_sql = "ROLLBACK"
+            return_v = errors[0]
+        c = []
+        for i in node:
+            c.append(self._execute_ending_sql(ending_sql, i))
+
+        await asyncio.gather(*c)
+        if ending_sql == "ROLLBACK":
+            return return_v  # type: ignore
+        return result.OK(1, 0, 2, 0, "", False)
+
+
 
     async def _insert_undo_log(self, lock_keys: Dict[str, Any],
                                sql: Insert) -> Optional[result.Error]:

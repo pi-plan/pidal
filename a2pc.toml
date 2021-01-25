@@ -1,0 +1,28 @@
+title = "PiDAL config file"
+
+[base] # 基本必备配置 TODO 通过环境变量获取
+version = 1 # 配置版本号
+meta_server_enable = true
+zone_enable = true
+zone_id = 1 # 当前的 Zone ID 
+
+[base.logging] # 日志配置
+    datefmt = ""
+    format = "%(asctime)s %(name)s [%(filename)s:%(lineno)d] [%(levelname)s]: %(message)s"
+    level = "DEBUG"
+
+[base.logging.handler]
+    args = [["./logs/pidal.log.%Y-%m-%d"], ["midnight"]]
+    class = "TimedRotatingFileHandler"
+
+[base.proxy] # 代理服务配置
+    host = "127.0.0.1" # 监听地址
+    port = 8080
+    max_connections = 1000 # 最大连接数
+    connect_timeout = 10 # 连接超时时间单位 秒
+    wait_timeout = 3600 # 最大空闲时间
+    transaction_timeout = 5 # 事务超时时间 需要小于等于 lock_wait_timeout 
+
+[base.meta_service]
+servers = [{host = "127.0.0.1", port = 8080}, {host = "127.0.0.1", port = 8080}] # pimms 服务地址
+wait_timeout = 10 # 和 pimms 失联多久之后触发失联 

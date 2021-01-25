@@ -46,11 +46,17 @@ class A2PClient(object):
         self.mod = len(self.services) - 1
 
     async def acquire_lock(self, xid: int, node: str, table: str,
-                           columns: Dict[str, Any], sql: str) -> A2PCResponse:
-        body = json.dumps({"columns": columns, "sql": sql})
+                           lock_key: Dict[str, Any], sql: str) -> A2PCResponse:
+        body = json.dumps({
+            "action": A2PCAction.ACQUIRE_LOCK,
+            "xid": xid,
+            "node": node,
+            "table": table,
+            "lock_key": lock_key,
+            "context": sql
+            })
         server = self.services[xid % self.mod]
-        url = "http://{}:{}/transactions/{}/{}/{}".format(server[0], server[1],
-                                                          xid, node, table)
+        url = "http://{}:{}/transactions".format(server[0], server[1])
         req = HTTPRequest(url, "PUT", self.header, body)
         client = AsyncHTTPClient()
         try:
@@ -68,7 +74,7 @@ class A2PClient(object):
         return await self._ending(xid, A2PCAction.ROLLBACK)
 
     async def _ending(self, xid: int, action: A2PCAction) -> A2PCResponse:
-        body = json.dumps({"action": action})
+        body = json.dumps({"action": action, "xid": xid})
         server = self.services[xid % self.mod]
         url = "http://{}:{}/transactions/{}".format(server[0], server[1], xid)
         req = HTTPRequest(url, "PUT", self.header, body)

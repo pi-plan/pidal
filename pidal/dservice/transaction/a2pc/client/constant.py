@@ -27,7 +27,8 @@ class A2PCAction(enum.IntEnum):
 class A2PCStatus(enum.IntEnum):
     ACTIVE = 1  # 事务活跃状态
     COMMIT = 2  # 事务提交
-    ROLLBACK = 3  # 事务回滚
+    ROLLBACKING = 3  # 事务回滚中
+    ROLLBACKED = 4  # 事务回滚完成
 
 
 @enum.unique

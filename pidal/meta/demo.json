@@ -151,6 +151,8 @@
           ],
           "backends": [
             {
+              "type": "source",
+              "name": "db0",
               "dsn": "mysql://root:@127.0.0.1:3306/test",
               "minimum_pool_size": 1,
               "maximum_pool_size": 100,

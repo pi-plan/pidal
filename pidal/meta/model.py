@@ -110,7 +110,7 @@ class A2PCBackend(object):
 
 class A2PC(object):
     def __init__(self, mode: A2PCMode, servers: List[Tuple[str, int]],
-                 backends: List[A2PCBackend]):
+                 backends: List['DBNode']):
         self.mode = mode
         self.servers = servers
         self.backends = backends
@@ -126,12 +126,7 @@ class A2PC(object):
             servers.append((i["host"], i["port"]))
         backends = []
         for i in conf["backends"]:
-            minimum_pool_size = max(1, conf.get("minimum_pool_size", 0))
-            maximum_pool_size = max(1, conf.get("maximum_pool_size", 0))
-            acquire_timeout = max(5, conf.get("acquire_timeout", 0))
-            wait_time = max(5, conf.get("wait_time", 0))
-            backends.append(A2PCBackend(i["dsn"], minimum_pool_size,
-                            maximum_pool_size, acquire_timeout, wait_time))
+            backends.append(DBNode.new_from_dict(i))
         return cls(mode, servers, backends)
 
 

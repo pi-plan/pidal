@@ -18,9 +18,10 @@ class A2PCMode(enum.IntEnum):
 
 @enum.unique
 class A2PCAction(enum.IntEnum):
-    ACQUIRE_LOCK = 1
-    COMMIT = 2
-    ROLLBACK = 3
+    BEGIN = 1
+    ACQUIRE_LOCK = 2
+    COMMIT = 3
+    ROLLBACK = 4
 
 
 @enum.unique

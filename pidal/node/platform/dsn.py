@@ -71,7 +71,7 @@ class DSN(object):
         args["port"] = self.port
         args["user"] = self.username
         args["password"] = self.password
-        args["database"] = self.database
+        args["db"] = self.database
         if self.args is not None:
             args.update(self.args)
         return args

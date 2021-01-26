@@ -21,7 +21,7 @@ class Frontend(tornado.web.Application):
     def __init__(self):
         self.a2pc: A2PCTM
         self.prev_a2pc: A2PCTM
-        self.meta_manager = MetaManager.new()
+        self.meta_manager = MetaManager.new(Config.get_instance())
         BackendManager.new()
         handlers = [
             (r"/", Home),
@@ -63,12 +63,14 @@ class Transactions(BaseHandler):
 
     async def put(self):
         p = Protocol.new(self.request.body)
-        if p.action is A2PCAction.COMMIT:
+        if p.action is A2PCAction.BEGIN:
+            r = await self.application.a2pc.begin(p)
+        elif p.action is A2PCAction.COMMIT:
             r = await self.application.a2pc.commit(p)
         elif p.action is A2PCAction.ROLLBACK:
             r = await self.application.a2pc.rollback(p)
         elif p.action is A2PCAction.ACQUIRE_LOCK:
-            return self._acquire_lock(p)
+            r = await self._acquire_lock(p)
         else:
             r = {"status": 1001, "msg": "unknown action."}
         self.write(r)
@@ -80,12 +82,13 @@ class Transactions(BaseHandler):
         times = 0
         while r is None:
             # TODO 修改成同步原语
-            asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)
             r = await self.application.a2pc.acquire_lock(p)
             times += 1
             if times > 10:
                 break
         if r is None:
-            return {"status": 1003, "message": "can not acquire lock"}
+            return {"status": 1003, "xid": p.xid,
+                    "message": "can not acquire lock"}
         else:
             return r

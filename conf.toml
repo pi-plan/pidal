@@ -17,7 +17,7 @@ zone_id = 1 # 当前的 Zone ID
 
 [base.proxy] # 代理服务配置
     host = "127.0.0.1" # 监听地址
-    port = 8080
+    port = 9024
     max_connections = 1000 # 最大连接数
     connect_timeout = 10 # 连接超时时间单位 秒
     wait_timeout = 3600 # 最大空闲时间

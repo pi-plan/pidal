@@ -230,7 +230,7 @@ class DBTableStrategyBackend(object):
             raise Exception("expression: [{}] need [node.table].".format(
                 expression))
         node = base[0]
-        prefix = base[1]
+        prefix = base[1] + "_"
         start = int(value[1])
         stop = int(value[2])
         step = 1
@@ -262,7 +262,7 @@ class DBTableStrategyBackend(object):
             raise Exception("expression: [{}] need [node.table].".format(
                 expression))
         node = base[0]
-        prefix = base[1]
+        prefix = base[1] + "_"
         return cls(node, prefix, int(value[1]))
 
     @classmethod

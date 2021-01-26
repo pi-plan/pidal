@@ -29,10 +29,10 @@ class Tools(object):
         if not seq_in_index_i or not column_name_i:
             raise Exception("unkonwn table [{}] key [{}]".format(table, key))
 
-        result = {}
+        res = {}
         for i in r.rows:
-            result[i[seq_in_index_i]] = i[column_name_i]
-        return [result[k] for k in sorted(result.keys())]
+            res[i[seq_in_index_i]] = i[column_name_i]
+        return [res[k] for k in sorted(res.keys())]
 
     @staticmethod
     async def get_column_default(conn: Connection, table: str) -> \
@@ -54,12 +54,12 @@ class Tools(object):
             raise Exception("can not get table [{}] column default.".format(
                             table))
 
-        if not field_i or not default_i:
+        if field_i is None or default_i is None:
             raise Exception("unkonwn table [{}] column default.".format(table))
 
-        result = {}
+        res = {}
         for i in r.rows:
-            result[i[field_i]] = i[default_i]
-        return result
+            res[i[field_i]] = i[default_i]
+        return res
 
 

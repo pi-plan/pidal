@@ -2,8 +2,8 @@ import argparse
 
 
 from pidal import VERSION
-from pidal.config import parser_config
-from pidal.logging import init_logging
+from a2pctm.config import parser_config
+from a2pctm.frontend import Frontend
 
 
 def parse_args():
@@ -22,6 +22,6 @@ def parse_args():
 
 async def main():
     args = vars(parse_args())
-    debug = args["debug"]
     parser_config(args["zone_id"], args["config"])
-    init_logging(debug)
+    server = Frontend()
+    await server.start()

@@ -11,9 +11,10 @@ from pidal.dservice.transaction.a2pc.client.constant import A2PCAction
 
 class A2PCResponse(object):
 
-    def __init__(self, status: int, msg: str):
+    def __init__(self, status: int, msg: str, xid: int = 0):
         self.status = status
         self.msg = msg
+        self.xid = xid
 
 
 class A2PClient(object):
@@ -44,6 +45,9 @@ class A2PClient(object):
         self.header = {}
         self.services = services
         self.mod = len(self.services) - 1
+
+    async def begin(self, xid: int = 0) -> A2PCResponse:
+        return await self._ending(xid, A2PCAction.BEGIN)
 
     async def acquire_lock(self, xid: int, node: str, table: str,
                            lock_key: Dict[str, Any], sql: str) -> A2PCResponse:
@@ -76,7 +80,7 @@ class A2PClient(object):
     async def _ending(self, xid: int, action: A2PCAction) -> A2PCResponse:
         body = json.dumps({"action": action, "xid": xid})
         server = self.services[xid % self.mod]
-        url = "http://{}:{}/transactions/{}".format(server[0], server[1], xid)
+        url = "http://{}:{}/transactions".format(server[0], server[1])
         req = HTTPRequest(url, "PUT", self.header, body)
         client = AsyncHTTPClient()
         try:
@@ -91,7 +95,8 @@ class A2PClient(object):
     def _parse_result(resp: HTTPResponse) -> A2PCResponse:
         r = json.loads(resp.body)
         status = r.get("status", None)
+        xid = r.get("xid", 0)
         if status is None:
             raise Exception("response is error : {}".format(resp.body))
         msg = r.get("msg", None)
-        return A2PCResponse(status, msg)
+        return A2PCResponse(status, msg, xid)

@@ -42,7 +42,7 @@ class Raw(Table):
         backend = loop.run_until_complete(
                 self.backend_manager.get_backend(self.backend.node))
 
-        _table = self.backend.prefix + str(self.backend.number)
+        _table = self.backend.prefix
         self.column_default = loop.run_until_complete(
                 Tools.get_column_default(backend, _table))
 

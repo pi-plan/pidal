@@ -10,12 +10,13 @@ class Protocol(object):
         p = json.loads(j)
         action = A2PCAction(p["action"])
         o = cls(action)
+        o.parser(p)
 
         return o
 
     def __init__(self, action: A2PCAction):
         self.action = action
-        self.xid: int
+        self.xid: int = 0
         self.node: str
         self.table: str
         self.lock_key: Dict[str, Any]
@@ -23,6 +24,9 @@ class Protocol(object):
         self.client_id: str
 
     def parser(self, params: Dict[str, Any]):
+        if self.action is A2PCAction.BEGIN:
+            xid = params.get("xid", 0)
+            self.xid = xid
         if self.action is A2PCAction.COMMIT:
             self.xid = params["xid"]
         elif self.action is A2PCAction.ROLLBACK:
@@ -31,7 +35,7 @@ class Protocol(object):
             self.xid = params["xid"]
             self.node = params["node"]
             self.table = params["table"]
-            self.columns = params["columns"]
+            self.lock_key = params["lock_key"]
 
         if "context" in params.keys():
             self.context = params["context"]

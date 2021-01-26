@@ -15,10 +15,10 @@ class MetaManager(object):
     _instance: Optional['MetaManager'] = None
 
     @classmethod
-    def new(cls) -> 'MetaManager':
+    def new(cls, config: Config) -> 'MetaManager':
         if cls._instance:
             return cls._instance
-        c = cls()
+        c = cls(config)
         cls._instance = c
         c.init_latest()
         return cls._instance
@@ -29,10 +29,11 @@ class MetaManager(object):
             raise Exception("Not yet initialized")
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, config: Config):
         self.versions: Dict[int, Dict[int, ZoneConfig]] = {}
         self.latest_version: int = 0
-        self.zone_id = Config.get_instance().current_zone_id
+        self.config = config
+        self.zone_id = config.current_zone_id
 
         # 元数据更新的观察者
         self.observers: List[Callable[[int]]] = []
@@ -51,7 +52,7 @@ class MetaManager(object):
         self.observers.append(handler)
 
     def init_pimms_client(self):
-        self._pimms_client: Client = Client.new()
+        self._pimms_client: Client = Client.new(self.config.get_meta_config())
         self._pimms_client.add_observer(self._on_version_update)
 
     def _on_version_update(self, new_version: int):

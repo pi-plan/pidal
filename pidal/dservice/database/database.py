@@ -18,8 +18,8 @@ class Database(object):
         self.idle_in_transaction_session_timeout = \
             db_config.idle_in_transaction_session_timeout
         self.tables: Dict[str, Table] = {}
-        self.create_tables()
         self.create_backends()
+        self.create_tables()
 
     def create_tables(self):
         for i in self.db_config.tables.values():

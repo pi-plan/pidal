@@ -152,7 +152,6 @@ def parser_config(zone_id: int, file: str):
         for i in ["host", "port"]:
             if i not in config["base"]["proxy"]:
                 raise Exception("config file is error.")
-
         ProxyConfig.new(config["base"]["proxy"]["host"],
                         config["base"]["proxy"]["port"])
 
@@ -173,7 +172,7 @@ def parser_config(zone_id: int, file: str):
                 config["base"]["logging"]["datefmt"],
                 logging_handler)
 
-        c = Config.new(_get_zone_id(zone_id, config),
+        c = Config.new(_get_zone_id(zone_id, config["base"]),
                        bool(config["base"]["meta_server_enable"]),
                        bool(config["base"]["zone_enable"]))
         if c.meta_server_enable or c.zone_enable:

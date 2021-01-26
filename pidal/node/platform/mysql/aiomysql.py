@@ -26,20 +26,20 @@ class AIOMySQL(Connection):
         self.max_idle_time = dsn.max_idle_time
         self._conn: Optional[aiomysql.Connection] = None
 
-        self._closed = False  # connect close flag
+        self.closed = False  # connect close flag
         self._last_executed = None
         self._result: Optional[MySQLResult] = None
 
     async def connect(self):
 
         client_flag = CLIENT.MULTI_STATEMENTS | CLIENT.MULTI_RESULTS
-        if not self._closed:
+        if not self.closed:
             self.close()
         self._conn = await aiomysql.connect(**self.dsn.get_args(),
                                             client_flag=client_flag,
                                             cursorclass=DictCursor)
         self._last_use_time = time.time()
-        self._closed = False
+        self.closed = False
 
     async def _ensure_connected(self):
         if self.max_idle_time and (time.time() - self._last_use_time
@@ -63,7 +63,7 @@ class AIOMySQL(Connection):
         try:
             await self._ensure_connected()
             cur = await self._conn.cursor()
-            cur.execute(sql)
+            await cur.execute(sql)
             self._result = cur._result
             return cur
         except MySQLError as e:
@@ -95,7 +95,7 @@ class AIOMySQL(Connection):
             return r
 
         descriptions = []
-        for i in _result.description:
+        for i in _result.fields:
             desc = result.ResultDescription(
                         i.catalog,
                         i.db,
@@ -115,7 +115,7 @@ class AIOMySQL(Connection):
     def close(self):
         if self._conn is not None:
             self._conn.close()
-            self._closed = True
+            self.closed = True
 
     def is_closed(self) -> bool:
-        return self._closed
+        return self.closed

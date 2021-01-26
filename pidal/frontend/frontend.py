@@ -4,7 +4,7 @@ from tornado.ioloop import IOLoop
 from tornado.iostream import IOStream
 
 from pidal.logging import logger
-from pidal.config import ProxyConfig
+from pidal.config import Config, ProxyConfig
 from pidal.frontend.tcpserver import ProxyTCPServer
 from pidal.frontend.session import Session
 from pidal.meta.manager import MetaManager
@@ -17,7 +17,7 @@ class Frontend(ProxyTCPServer):
         super().__init__()
         self.sessions: Set[Session] = set()
         self._conf: ProxyConfig = ProxyConfig.get_instance()
-        self.meta_manager = MetaManager.new()
+        self.meta_manager = MetaManager.new(Config.get_instance())
 
         # 当前最新的 Dserver 服务，在启动的时候必须要初始化
         self.dserver: DService

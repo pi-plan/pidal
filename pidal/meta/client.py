@@ -2,7 +2,7 @@ import json
 
 from typing import Any, Dict, List, Tuple, Optional, Callable
 
-from pidal.config import Config
+from pidal.config import MetaService
 
 
 class Client(object):
@@ -27,12 +27,10 @@ class Client(object):
         self.role_changed = True
 
     @classmethod
-    def new(cls) -> 'Client':
+    def new(cls, config: MetaService) -> 'Client':
         if cls._instance:
             return cls._instance
-        config = Config.get_instance()
-        c = cls(config.get_meta_config().servers,
-                config.get_meta_config().wait_timeout)
+        c = cls(config.servers, config.wait_timeout)
         cls._instance = c
         return cls._instance
 

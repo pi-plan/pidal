@@ -8,6 +8,7 @@ from pidal.logging import logger
 from pidal.protocol.mysql import Command, ServerStatus
 from pidal.protocol.util import byte2int, int2byte, dump_packet
 from pidal.stream import Stream
+from pidal.node.result import result
 
 
 NULL_COLUMN = 251
@@ -222,9 +223,13 @@ class PacketBytesWriter(object):
     def write_length_coded_string(v: Optional[str]) -> bytes:
         if v is None:
             return int2byte(NULL_COLUMN)
-        length = len(v)
+        if isinstance(v, str):
+            vb = v.encode()  # type: ignore
+        else:
+            vb = v
+        length = len(vb)  # type: ignore
         r = PacketBytesWriter.write_length_encoded_integer(length)
-        r += v.encode()
+        r = r + vb
         return r
 
     @staticmethod
@@ -245,6 +250,7 @@ class Execute(object):
         p = cls()
         try:
             p.command = Command(raw[0])
+            p.length = len(raw)
         except ValueError:
             logger.warning("unknown command %s, with packet: %s",
                            byte2int(raw[0]), dump_packet(raw))
@@ -280,6 +286,34 @@ class OK(object):
             bool(p.server_status & ServerStatus.SERVER_MORE_RESULTS_EXISTS)
         return p
 
+    def encode(self) -> bytes:
+        r = PacketBytesWriter.write_struct('B', 0x00)
+        r += PacketBytesWriter.write_length_encoded_integer(self.affected_rows)
+        r += PacketBytesWriter.write_length_encoded_integer(self.insert_id)
+        server_status = self.server_status
+        if self.has_next:
+            server_status = \
+                self.server_status | ServerStatus.SERVER_MORE_RESULTS_EXISTS
+        r += PacketBytesWriter.write_struct(
+                '<HH',
+                self.warning_count,
+                server_status)
+        if isinstance(self.message, str):
+            r += self.message.encode()
+        else:
+            r += self.message
+        return r
+
+    @classmethod
+    def new_from_result(cls, r: result.OK) -> 'OK':
+        o = cls()
+        o.affected_rows = r.affected_rows
+        o.insert_id = r.insert_id
+        o.server_status = r.server_status
+        o.warning_count = r.warning_count
+        o.message = r.message
+        o.has_next = r.has_next
+        return o
 
 class EOF(object):
     server_status: int
@@ -331,6 +365,22 @@ class Error(object):
         p.message = p_reader.read_all().decode()
         return p
 
+    def encode(self) -> bytes:
+        r = PacketBytesWriter.write_struct(
+                '<BH6s',
+                0xff,
+                self.error_code,
+                self.sql_state)
+        return r + self.message.encode()
+
+    @classmethod
+    def new_from_result(cls, r: result.Error) -> 'Error':
+        e = cls()
+        e.error_code = r.error_code
+        e.sql_state = "#93837".encode()
+        e.message = r.message
+        return e
+
 
 class ResultSetField(object):
     catalog: Optional[str]
@@ -377,6 +427,22 @@ class ResultSetField(object):
                                                  self.flags,
                                                  self.scale)
         return result
+
+    @classmethod
+    def new_from_result(cls, r: result.ResultDescription) -> 'ResultSetField':
+        f = cls()
+        f.catalog = r.catalog
+        f.db = r.db
+        f.table_name = r.table_name
+        f.org_table = r.org_name
+        f.name = r.name
+        f.org_name = r.org_name
+        f.charsetnr = r.charsetnr
+        f.length = r.length
+        f.type_code = r.type_code
+        f.flags = r.flags
+        f.scale = r.scale
+        return f
 
 
 class ResultSet(object):
@@ -440,11 +506,12 @@ class ResultSet(object):
         for field in self.fields:
             result = field.encode()
             header = PacketHeader.new(len(result), packet_number).encode()
-            await stream.write(header + result)
+            await stream.write(header)
+            await stream.write(result)
             packet_number += 1
 
         # field end
-        result = EOF.new(warning_count, server_status, False).encode()
+        result = EOF.new(warning_count, server_status, True).encode()
         header = PacketHeader.new(len(result), packet_number).encode()
         await stream.write(header + result)
         packet_number += 1
@@ -453,7 +520,11 @@ class ResultSet(object):
         for row in self.rows:
             result = bytes()
             for i in row:
-                result += PacketBytesWriter.write_length_coded_string(i)
+                if i is None or isinstance(i, str) or isinstance(i, bytes):
+                    bi = i
+                else:
+                    bi = str(i)
+                result += PacketBytesWriter.write_length_coded_string(bi)
 
             header = PacketHeader.new(len(result), packet_number).encode()
             await stream.write(header + result)
@@ -464,3 +535,37 @@ class ResultSet(object):
 
         header = PacketHeader.new(len(result), packet_number).encode()
         await stream.write(header + result)
+
+    @classmethod
+    def new_from_result(cls, r: result.ResultSet) -> 'ResultSet':
+        c = cls()
+        descs = []
+        for d in r.descriptions:
+            descs.append(ResultSetField.new_from_result(d))
+        c.field_count = r.field_count
+        c.fields = descs
+        c.rows = r.rows
+        return c
+
+
+class ResultWriter(object):
+
+    @staticmethod
+    async def write(rs: List[result.Result], stream: Stream,
+                    packet_number: int):
+        logger.info(rs)
+        out = None
+        for r in rs:
+            if isinstance(r, result.ResultSet):
+                out = ResultSet.new_from_result(r)
+                return await out.encode(0, 32, stream, packet_number)
+            elif isinstance(r, result.Error):
+                out = Error.new_from_result(r).encode()
+                header = PacketHeader.new(len(out), packet_number).encode()
+                return await stream.write(header + out)
+            elif isinstance(r, result.OK):
+                out = OK.new_from_result(r).encode()
+                header = PacketHeader.new(len(out), packet_number).encode()
+                return await stream.write(header + out)
+            else:
+                raise Exception("unkonwn packet type.")

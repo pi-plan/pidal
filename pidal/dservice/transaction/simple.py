@@ -1,9 +1,11 @@
 import asyncio
+import traceback
 
 from typing import Optional
 
 import pidal.node.result as result
 
+from pidal.logging import logger
 from pidal.constant.db import TransStatus
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.database.database import Database
@@ -26,7 +28,7 @@ class Simple(Trans):
 
     def __init__(self, db: Database, *nodes: str):
         self.db = db
-        self.nodes = nodes
+        self.nodes = set(nodes)
 
         self.xid = next(snowflake)
         self.backend_manager = BackendManager.get_instance()
@@ -59,12 +61,13 @@ class Simple(Trans):
             for i in self.nodes:
                 g.append(self._commit(i))
             await asyncio.gather(*g)
+        self.backend_manager.free_trans(self.xid)
         self.status = TransStatus.END
 
     async def _commit(self, node: str):
         b = await self.backend_manager.get_backend(node, self.xid)
         try:
-            await b.begin()
+            await b.commit()
         except Exception as e:
             # TODO 针对异常进行不同的处理
             raise e
@@ -76,17 +79,20 @@ class Simple(Trans):
             for i in self.nodes:
                 g.append(self._rollback(i))
             await asyncio.gather(*g)
+        self.backend_manager.free_trans(self.xid)
         self.status = TransStatus.END
 
     async def _rollback(self, node: str):
+        logger.debug("xid: {} rollback".format(self.xid))
         b = await self.backend_manager.get_backend(node, self.xid)
         try:
-            await b.begin()
+            await b.rollback()
         except Exception as e:
             # TODO 针对异常进行不同的处理
             raise e
 
     async def execute_dml(self, sql: DML) -> result.Result:
+        logger.debug("xid: {} execute_dml".format(self.xid))
         if not sql.table:
             return await self.execute_other(sql)
         table = self.db.get_table(str(sql.table))
@@ -97,7 +103,17 @@ class Simple(Trans):
         for i in nodes:
             if i not in self.nodes:
                 await self._begin(i.node)
-        return await table.execute_dml(sql, self.xid)
+                self.nodes.add(i.node)
+        r = await table.execute_dml(sql, self.xid)
+        return r
 
     async def execute_other(self, sql: SQL) -> result.Result:
         return await self.db.execute_other(sql)
+
+    async def close(self):
+        if self.status is not TransStatus.END:
+            await self.rollback(None)
+        self.backend_manager.free_trans(self.xid)
+        logger.debug("xid: {} is closed".format(self.xid))
+        for i in self.backend_manager.backends.keys():
+            logger.debug(self.backend_manager.backends[i]._used)

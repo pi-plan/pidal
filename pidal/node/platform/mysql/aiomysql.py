@@ -1,4 +1,6 @@
 import time
+import traceback
+
 from typing import Optional, Union
 
 import aiomysql
@@ -28,10 +30,12 @@ class AIOMySQL(Connection):
 
         self.closed = False  # connect close flag
         self._last_executed = None
+        self.last_usage = 0
         self._result: Optional[MySQLResult] = None
 
     async def connect(self):
 
+        print("connection reconnect")
         client_flag = CLIENT.MULTI_STATEMENTS | CLIENT.MULTI_RESULTS
         if not self.closed:
             self.close()
@@ -45,13 +49,14 @@ class AIOMySQL(Connection):
         if self.max_idle_time and (time.time() - self._last_use_time
                                    > self.max_idle_time):
             await self.connect()
-        self._last_use_time = time.time()
+        self.last_usage = time.time()
 
     async def begin(self):
         await self._ensure_connected()
         await self._conn.begin()
 
     async def commit(self):
+        traceback.print_exc()
         await self._ensure_connected()
         await self._conn.commit()
 

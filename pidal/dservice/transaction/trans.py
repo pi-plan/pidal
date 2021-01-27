@@ -38,3 +38,7 @@ class Trans(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_status(self) -> TransStatus:
         pass
+
+    @abc.abstractmethod
+    async def close(self):
+        pass

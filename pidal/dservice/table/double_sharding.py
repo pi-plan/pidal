@@ -49,6 +49,7 @@ class DoubleSharding(Table):
 
         self.lock_columns = loop.run_until_complete(
                 Tools.get_lock_columns(backend, _table, self.lock_key))
+        self.backend_manager.release(node.node, backend)
 
     def _parse_strategies(self, strategies: List[DBTableStrategy]):
         self.sharding_columns = []

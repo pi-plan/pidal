@@ -64,7 +64,6 @@ class Connection(object):
                         self.stream)
                 conn = await PoolManager.acquire()
                 r = await conn.query(packet.query)
-                print(r)
         except torio.StreamClosedError:
             logger.warning("client has close with.")
             self.close()

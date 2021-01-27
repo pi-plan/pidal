@@ -1,6 +1,5 @@
 import asyncio
-from pidal.node.result.command import Command
-from pidal.node.result.result import Execute
+import traceback
 
 from typing import Tuple
 
@@ -8,6 +7,8 @@ import tornado.iostream as torio
 
 import pidal.protocol.mysql as mysql
 
+from pidal.node.result.command import Command
+from pidal.node.result.result import Execute
 from pidal.dservice.dservice import DService
 from pidal.dservice.dsession import DSession
 from pidal.constant.db import SessionStatus
@@ -26,7 +27,7 @@ class Session(object):
         self.stream: IOStream = IOStream(stream)
         self.address: Tuple[str, int] = address
         self.delegate: ConnectionDelegate = delegate
-        self.status: SessionStatus = SessionStatus.SERVING
+        self.status: SessionStatus = SessionStatus.INIT
         self.dserver = dserver
         self.dsession: DSession = dserver.create_session()
 
@@ -47,13 +48,14 @@ class Session(object):
                 self.status = SessionStatus.HANDSHAKED
                 self.start()
             else:
-                self.close()
+                await self.close()
         except Exception as e:
             logger.warning("error with %s", str(e))
-            self.close()
+            await self.close()
 
     async def start_serving(self):
         try:
+            i = 0
             while True:
                 packet = await mysql.PacketBytesReader.read_execute_packet(
                         self.stream)
@@ -61,16 +63,24 @@ class Session(object):
                                   Command(packet.command),
                                   packet.args, packet.query)
                 r = await self.dsession.execute(execute)
-                print(r)
+                i += 1
+                num = int(i < 7)
+                if i > 6:
+                    num = 0
+                logger.info(r[0])
+                if r is not None:
+                    await mysql.ResultWriter.write(r, self.stream, num)
         except torio.StreamClosedError:
             logger.warning("client has close with.")
-            self.close()
+            await self.close()
         except Exception as e:
+            traceback.print_exc()
             logger.warning("error with %s", str(e))
 
     def get_session_status(self) -> SessionStatus:
         return self.dsession.get_session_status()
 
-    def close(self):
+    async def close(self):
         self.status = SessionStatus.CLOSE
+        await self.dsession.close()
         self.delegate.on_close(self)  # type: ignore

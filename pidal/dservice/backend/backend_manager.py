@@ -48,6 +48,9 @@ class BackendManager(object):
 
         return await pool.acquire()
 
+    def release(self, node: str, conn: Connection):
+        self.backends.get(node).release(conn)
+
     async def get_backend_by_trans(self, node: str,
                                    trans_id: int) -> Connection:
         trans = self.trans.get(trans_id, None)
@@ -66,3 +69,4 @@ class BackendManager(object):
             return
         for node, conn in trans.items():
             self.backends[node].release(conn)
+        del(self.trans[trans_id])

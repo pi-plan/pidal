@@ -13,11 +13,16 @@ class SQL(object):
         self.raw_where = {}
         self.new_value = {}
 
+    def has_table(self) -> bool:
+        return hasattr(self, "table")
+
     def add_pidal(self, _: int):  # type: ignore
         pass
 
     def parse_table_name(self):
         fl = self._get_from_part()
+        if not fl:
+            return
         table = self.extract_table_identifiers(fl)
         if len(table) != 1:
             raise Exception("Not support sub select.")
@@ -88,7 +93,9 @@ class SQL(object):
     def extract_table_identifiers(token_stream):
         tables = []
         for item in token_stream:
-            if isinstance(item, IdentifierList):
+            if isinstance(item, Where):
+                break
+            elif isinstance(item, IdentifierList):
                 for identifier in item.get_identifiers():
                     tables.append(identifier)
             elif isinstance(item, Identifier):
@@ -139,6 +146,7 @@ class TCL(SQL):
 
 
 class DML(SQL):
+
     def __init__(self, raw: Statement):
         self.raw = raw
         self.table: Identifier
@@ -160,6 +168,8 @@ class Select(DML):
     def parse(self):
         self.parse_table_name()
         where = self._get_where_part()
+        if not where:
+            return
         self.column = self.parse_where(where)
         self._parse_for_update(where)
 
@@ -283,7 +293,8 @@ class Update(DMLW):
                 c[0].tokens.reverse()
                 for i, v in enumerate(c[0].tokens):
                     item.insert_before(1, v)
-        for i in sqlparse.parse(", pidal_c = {} ".format(value))[0].tokens:
+        pidal_c = ", `pidal_c` = {}| CONV(RIGHT(BIN(`pidal_c`), 21), 2, 10)+2 "
+        for i in sqlparse.parse(pidal_c.format(value))[0].tokens:
             self.raw.insert_before(where, i)
 
 
@@ -470,5 +481,7 @@ if __name__ == "__main__":
 
     de = Parser.parse(sql)
     for i in de:
+        if not i.has_table():
+            continue
         i.add_pidal(100)
         i.modify_table("a_22")

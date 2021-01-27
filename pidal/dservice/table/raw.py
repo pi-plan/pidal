@@ -41,6 +41,7 @@ class Raw(Table):
         loop = asyncio.get_event_loop()
         backend = loop.run_until_complete(
                 self.backend_manager.get_backend(self.backend.node))
+        self.backend_manager.release(self.backend.node, backend)
 
         _table = self.backend.prefix
         self.column_default = loop.run_until_complete(
@@ -68,9 +69,14 @@ class Raw(Table):
         node = self.get_node(sql)[0]
         backend = await self.backend_manager.get_backend(node.node, trans_id)
         if isinstance(sql, DMLW):
+            if not trans_id:
+                return result.Error(1002,
+                                    "write data must begin a transaction.")
             sql.add_pidal(1)  # TODO 管理隐藏字段
-        result = await backend.query(str(sql))
-        return result
+        r = await backend.query(str(sql.raw))
+        if not trans_id:
+            self.backend_manager.release(node.node, backend)
+        return r
 
     def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
         if not self.backend:

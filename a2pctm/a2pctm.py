@@ -41,31 +41,59 @@ class A2PCTM(object):
             return {"status": 0, "message": "", "xid": p.xid}
 
     async def commit(self, p: Protocol) -> Dict[str, Any]:
-        sql = "BEGIN;INSERT INTO transaction_info_{} (`xid`, `status`, \
-                `client_id`) VALUES ({}, {}, '{}') \
-                ON DUPLICATE KEY UPDATE status = VALUES(`status`), \
-                client_id = VALUES(`client_id`);COMMIT;"
+        sql = "BEGIN;update transaction_info_{number} set `status` = {status} \
+                where xid = {xid} and status in (1, 2);COMMIT;\
+                select * from transaction_info_{number} where xid = {xid}"
         number = self.get_table_number(p.xid)
         node = await self.backend_manager.get_backend(self.nodes[number].name)
-        r = await node.query(sql.format(number, p.xid, A2PCStatus.COMMIT, ''))
+        params = {
+                "number": number,
+                "xid": p.xid,
+                "status": A2PCStatus.COMMIT
+                }
+        r = await node.query(sql.format(**params))
         if isinstance(r, result.Error):
             return {"status": r.error_code, "xid": p.xid, "message": r.message}
-        else:
+        if not isinstance(r, result.ResultSet):
+            return {"status": 1003, "xid": p.xid,
+                    "message": "when find transaction is error."}
+        if not r.rows:
+            return {"status": 1003, "xid": p.xid,
+                    "message": "transaction not found"}
+        if r.rows[0][1] == A2PCStatus.COMMIT.value:
             return {"status": 0, "xid": p.xid, "message": ""}
+        else:
+            return {"status": 1003, "xid": p.xid,
+                    "message": "transaction is {}.".format(
+                        A2PCStatus(r.rows[0][1]).name)}
 
     async def rollback(self, p: Protocol) -> Dict[str, Any]:
-        sql = "BEGIN;INSERT INTO transaction_info_{} (`xid`, `status`, \
-                `client_id`) VALUES ({}, {}, '{}') \
-                ON DUPLICATE KEY UPDATE status = VALUES(`status`), \
-                client_id = VALUES(`client_id`);COMMIT;"
+        sql = "BEGIN;update transaction_info_{number} set `status` = {status} \
+                where xid = {xid} and status in (1, 3);COMMIT;\
+                select * from transaction_info_{number} where xid = {xid}"
         number = self.get_table_number(p.xid)
         node = await self.backend_manager.get_backend(self.nodes[number].name)
-        r = await node.query(sql.format(number, p.xid, A2PCStatus.ROLLBACKING,
-                                        ''))
+        params = {
+                "number": number,
+                "xid": p.xid,
+                "status": A2PCStatus.ROLLBACKING
+                }
+        r = await node.query(sql.format(**params))
         if isinstance(r, result.Error):
             return {"status": r.error_code, "xid": p.xid, "message": r.message}
-        else:
+        if not isinstance(r, result.ResultSet):
+            return {"status": 1003, "xid": p.xid,
+                    "message": "when find transaction is error."}
+        if not r.rows:
+            return {"status": 1003, "xid": p.xid,
+                    "message": "transaction not found"}
+        if r.rows[0][1] in (A2PCStatus.ROLLBACKING.value,
+                            A2PCStatus.ROLLBACKED.value):
             return {"status": 0, "xid": p.xid, "message": ""}
+        else:
+            return {"status": 1003, "xid": p.xid,
+                    "message": "transaction is {}.".format(
+                        A2PCStatus(r.rows[0][1]).name)}
 
     async def acquire_lock(self, p: Protocol) -> Dict[str, Any]:
         lock_key = json.dumps(p.lock_key)

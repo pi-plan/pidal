@@ -32,12 +32,13 @@ class A2PClient(object):
         meta = MetaManager.get_instance()
         db_conf = meta.get_db()
         assert db_conf
-        return cls(db_conf.a2pc.servers)
+        cls._instance = cls(db_conf.a2pc.servers)
+        return cls._instance
 
     @classmethod
     def get_instance(cls) -> 'A2PClient':  # type: ignore
         if not cls._instance:
-            cls.new()
+            return cls.new()
         else:
             return cls._instance
 
@@ -59,7 +60,8 @@ class A2PClient(object):
             "lock_key": lock_key,
             "context": sql
             })
-        server = self.services[xid % self.mod]
+        n = (xid % self.mod) if self.mod > 0 else 0
+        server = self.services[n]
         url = "http://{}:{}/transactions".format(server[0], server[1])
         req = HTTPRequest(url, "PUT", self.header, body)
         client = AsyncHTTPClient()
@@ -79,7 +81,8 @@ class A2PClient(object):
 
     async def _ending(self, xid: int, action: A2PCAction) -> A2PCResponse:
         body = json.dumps({"action": action, "xid": xid})
-        server = self.services[xid % self.mod]
+        n = (xid % self.mod) if self.mod > 0 else 0
+        server = self.services[n]
         url = "http://{}:{}/transactions".format(server[0], server[1])
         req = HTTPRequest(url, "PUT", self.header, body)
         client = AsyncHTTPClient()

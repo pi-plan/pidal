@@ -19,7 +19,6 @@ from pidal.dservice.database.database import Database
 from pidal.dservice.sqlparse.paser import DML, Delete, Insert, SQL, Select,\
         TCL, Update, DMLW
 from pidal.dservice.transaction.trans import Trans
-from pidal.lib.snowflake import generator as snowflake
 from pidal.dservice.transaction.a2pc.reundo.reundo_log import ReUnDoLog
 from pidal.dservice.transaction.a2pc.reundo.factory import \
         Factory as ReUnFactory
@@ -35,24 +34,29 @@ class A2PC(Trans):
         self.db = db
         self.nodes = nodes
 
-        self.xid = next(snowflake)
+        self.xid = 0
         self.backend_manager = BackendManager.get_instance()
         self.status = TransStatus.INIT
 
         self.a2pc_client = A2PClient.get_instance()
-        self._reundo_log: Dict[str, Dict[Dict[str, Any], ReUnDoLog]] = {}
+        self._reundo_log: Dict[str, Dict[str, ReUnDoLog]] = {}
 
     def get_status(self) -> TransStatus:
         return self.status
 
     async def begin(self, sql: TCL) -> Optional[result.Result]:
         self.status = TransStatus.BEGINNING
-        # TODO 支持统一获取事务 ID
+        r = await self.a2pc_client.begin()
+        if r.status == 0:
+            self.xid = r.xid
+        else:
+            return result.Error(r.status, r.msg)
         self.status = TransStatus.ACTIVE
 
     async def commit(self, sql: TCL) -> Optional[result.Result]:
         r = await self.a2pc_client.commit(self.xid)
         if r.status == 0:
+            self.status = TransStatus.END
             return result.OK(0, 0, 0, 0, "", False)
         else:
             return result.Error(r.status, r.msg)
@@ -60,6 +64,7 @@ class A2PC(Trans):
     async def rollback(self, sql: TCL) -> Optional[result.Result]:
         r = await self.a2pc_client.rollback(self.xid)
         if r.status == 0:
+            self.status = TransStatus.END
             return result.OK(0, 0, 0, 0, "", False)
         else:
             return result.Error(r.status, r.msg)
@@ -109,10 +114,10 @@ class A2PC(Trans):
         if not table_logs:
             table_logs = {}
             self._reundo_log[table] = table_logs
-        log = table_logs.get(lock_keys, None)
+        log = table_logs.get(str(lock_keys), None)
         if not log:
             log = ReUnFactory.new("unique", self.xid, lock_keys, table)
-            self._reundo_log[table][lock_keys] = log
+            self._reundo_log[table][str(lock_keys)] = log
         log.set_undo(old_raw)
 
     async def execute_update(self, sql: Update) -> result.Result:
@@ -128,7 +133,7 @@ class A2PC(Trans):
             lock_keys[i] = sql.raw_where[i]
 
         error = await self._update_undo_log(lock_keys, sql)
-        if not error:
+        if error:
             return error  # type: ignore
         reundo_sql = self.reundo_log_generator(table.get_name(), lock_keys)
         if not reundo_sql:
@@ -164,7 +169,6 @@ class A2PC(Trans):
         c = []
         for i in node:
             c.append(self._execute_ending_sql(ending_sql, i))
-
         await asyncio.gather(*c)
         # 如果在 rollback 的时候异常，抛错给 app，即使数据库没有 rollback，
         # 也会在超时机制下回滚。 backend 遇到异常会关闭 session 触发 mysql
@@ -189,10 +193,12 @@ class A2PC(Trans):
         if isinstance(table, Raw):
             backend = await self.backend_manager.get_backend(node.node,
                                                              self.xid)
-            return await backend.query(before_sql + str(sql))
+            logger.warning(before_sql + str(sql.raw))
+            return await backend.query(before_sql + str(sql.raw))
         backend = await self.backend_manager.get_backend(node.node, self.xid)
         sql.modify_table(node.prefix + str(node.number))
-        return await backend.query(before_sql + str(sql))
+        logger.warning(before_sql + str(sql.raw))
+        return await backend.query(before_sql + str(sql.raw))
 
     async def _update_undo_log(self, lock_keys: Dict[str, Any],
                                sql: Update) -> Optional[result.Error]:
@@ -202,13 +208,14 @@ class A2PC(Trans):
         if table_logs is None:
             table_logs = {}
             self._reundo_log[table.get_name()] = table_logs
-        log = table_logs.get(lock_keys, None)
+        log = table_logs.get(str(lock_keys), None)
 
         if log is None:
             # 获取 undo log 并获取本地锁。
-            sl = sqlparse.parse("select * from {} for update".format(
+            sl = sqlparse.parse("select * from {} ".format(
                 str(sql.table)))[0]
             sl.insert_after(len(sl.tokens), sql.get_where())
+            sl.insert_after(len(sl.tokens), sqlparse.parse(" for update")[0])
             old_raw = await table.execute_dml(Select(sl), self.xid)
             if isinstance(old_raw, result.Error):
                 return old_raw
@@ -216,7 +223,7 @@ class A2PC(Trans):
                 raise Exception("can`t get undo log.")
 
             self._record_undo_data(table.get_name(), lock_keys, old_raw)
-            log = self._reundo_log[table.get_name()][lock_keys]
+            log = self._reundo_log[table.get_name()][str(lock_keys)]
         log.set_redo(sql.new_value, A2PCOperation.UPDATE)
 
     def reundo_log_generator(self, table: str, lock_keys: Dict[str, Any])\
@@ -225,7 +232,7 @@ class A2PC(Trans):
 
         if table_logs is None:
             return None
-        log = table_logs.get(lock_keys, None)
+        log = table_logs.get(str(lock_keys), None)
 
         if log is None:
             return None
@@ -287,8 +294,6 @@ class A2PC(Trans):
             return return_v  # type: ignore
         return result.OK(1, 0, 2, 0, "", False)
 
-
-
     async def _insert_undo_log(self, lock_keys: Dict[str, Any],
                                sql: Insert) -> Optional[result.Error]:
         table = self.db.get_table(str(sql.table))
@@ -297,11 +302,11 @@ class A2PC(Trans):
         if table_logs is None:
             table_logs = {}
             self._reundo_log[table.get_name()] = table_logs
-        log = table_logs.get(lock_keys, None)
+        log = table_logs.get(str(lock_keys), None)
 
         if log is None:
             self._record_undo_data(table.get_name(), lock_keys, None)
-            log = self._reundo_log[table.get_name()][lock_keys]
+            log = self._reundo_log[table.get_name()][str(lock_keys)]
         log.set_redo(sql.new_value, A2PCOperation.INSERT)
 
     async def execute_delete(self, sql: Delete) -> result.Result:
@@ -367,7 +372,7 @@ class A2PC(Trans):
         if table_logs is None:
             table_logs = {}
             self._reundo_log[table.get_name()] = table_logs
-        log = table_logs.get(lock_keys, None)
+        log = table_logs.get(str(lock_keys), None)
 
         if log is None:
             # 获取 undo log 并获取本地锁。
@@ -381,8 +386,16 @@ class A2PC(Trans):
                 raise Exception("can`t get undo log.")
 
             self._record_undo_data(table.get_name(), lock_keys, old_raw)
-            log = self._reundo_log[table.get_name()][lock_keys]
+            log = self._reundo_log[table.get_name()][str(lock_keys)]
         log.set_redo(None, A2PCOperation.DELETE)
 
     async def execute_other(self, sql: SQL) -> result.Result:
         return await self.db.execute_other(sql)
+
+    async def close(self):
+        if self.status is not TransStatus.END:
+            await self.rollback(None)
+        self.backend_manager.free_trans(self.xid)
+        logger.debug("xid: {} is closed".format(self.xid))
+        for i in self.backend_manager.backends.keys():
+            logger.debug(self.backend_manager.backends[i]._used)

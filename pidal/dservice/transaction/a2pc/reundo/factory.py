@@ -7,7 +7,7 @@ from pidal.dservice.transaction.a2pc.reundo.reundo_log import ReUnDoLog
 class Factory(object):
 
     c_map = {
-            "unqiue": Unique,
+            "unique": Unique,
             }
 
     @classmethod

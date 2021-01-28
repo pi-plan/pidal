@@ -47,14 +47,14 @@ class Unique(ReUnDoLog):
             return None
         sql = """
 insert into reundo_log (`lock_key`, `xid`, `context`, `table`, `reundo_log`,
-`status`, `client_id`) VALUES ({}, {}, {}, {}, {}. {}, {});
+`status`, `client_id`) VALUES ('{}', {}, '{}', '{}', '{}', {}, '{}');
         """
         lock_keys = json.dumps(self.lock_keys)
         reundo_log = {
-                "operation": self.operation,
+                "operation": self.operation.value,
                 "undo": self.undo,
                 "redo": self.redo
                 }
         reundo_log_str = json.dumps(reundo_log)
         return sql.format(lock_keys, self.xid, self.context, self.table,
-                          reundo_log_str.encode(), status, client_id)
+                          reundo_log_str, status, client_id)

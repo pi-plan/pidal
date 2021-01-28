@@ -50,8 +50,8 @@ CREATE TABLE `transaction_info_1` (
   PRIMARY KEY (`xid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-DROP TABLE if exists `undo_log`;
-CREATE TABLE `undo_log` (
+DROP TABLE if exists `reundo_log`;
+CREATE TABLE `reundo_log` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `lock_key` varchar(255) NOT NULL,
   `xid` varchar(100) NOT NULL,
@@ -63,8 +63,8 @@ CREATE TABLE `undo_log` (
   `create_time` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `update_time` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `un_xid` (`xid`),
-  UNIQUE KEY `un_undo_log` (`table`,`lock_key`)
+  KEY `un_xid` (`xid`),
+  KEY `un_undo_log` (`table`,`lock_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_raw`;

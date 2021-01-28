@@ -262,7 +262,7 @@ class Update(DMLW):
             if not isinstance(new_set[0], Identifier) or \
                     new_set[1].value != "=":
                 raise Exception("pidal  not support sql.")
-            self.new_value[new_set[0].value] = new_set[2]
+            self.new_value[new_set[0].value] = str(new_set[2]).strip("'\"")
 
     def _get_from_part(self):
         for i, item in enumerate(self.raw.tokens):

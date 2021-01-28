@@ -151,7 +151,7 @@
           "backends": [
             {
               "type": "source",
-              "name": "db0",
+              "name": "tdb0",
               "dsn": "mysql://root:@127.0.0.1:3306/test",
               "minimum_pool_size": 1,
               "maximum_pool_size": 100,
@@ -160,7 +160,7 @@
             },
             {
               "type": "source",
-              "name": "db0",
+              "name": "tdb1",
               "dsn": "mysql://root:@127.0.0.1:3306/test",
               "minimum_pool_size": 1,
               "maximum_pool_size": 100,

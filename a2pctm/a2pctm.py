@@ -1,7 +1,7 @@
 import json
 import hashlib
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from pidal.node.result import result
 from pidal.dservice.transaction.a2pc.client.constant import A2PCStatus
 from pidal.dservice.transaction.a2pc.client.protocol import Protocol
@@ -95,7 +95,7 @@ class A2PCTM(object):
                     "message": "transaction is {}.".format(
                         A2PCStatus(r.rows[0][1]).name)}
 
-    async def acquire_lock(self, p: Protocol) -> Dict[str, Any]:
+    async def acquire_lock(self, p: Protocol) -> Optional[Dict[str, Any]]:
         lock_key = json.dumps(p.lock_key)
         int_lock = int(hashlib.md5(lock_key.encode()).hexdigest()[26:], 16)
         number = self.get_table_number(int_lock)
@@ -126,17 +126,18 @@ UPDATE lock_table_{number} SET xid = {xid} WHERE lock_key = '{lock_key}' \
             # TODO 优化错误处理模式。
             while await cur.nextset():
                 r = await cur.fetchall()
-            if len(r) != 1:
+            if len(r) != 1:  # type: ignore
                 await node.query("ROLLBACK")
                 return {"status": 100001, "xid": p.xid,
                         "message": "multi lines."}
-            r = r[0]
+            r = r[0]  # type: ignore
             if r["xid"] == p.xid:
                 await node.query("COMMIT")
                 return {"status": 0, "xid": p.xid, "message": ""}
             old_status = await self._get_xid_status(r["xid"])
             if old_status in [A2PCStatus.COMMIT, A2PCStatus.ROLLBACKED]:
-                cur = await node.batch((update_sql + "COMMIT").format(**params))
+                cur = await node.batch((update_sql + "COMMIT").format(
+                    **params))
                 if isinstance(cur, result.Error):
                     return {"status": cur.error_code, "xid": p.xid,
                             "message": cur.message}

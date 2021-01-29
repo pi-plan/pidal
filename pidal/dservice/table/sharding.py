@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from pidal.dservice.table.tools import Tools
 from pidal.dservice.backend.backend_manager import BackendManager
@@ -103,6 +103,24 @@ class Sharding(Table):
         if not node:
             raise Exception("can not get backend.")
         return [node]
+
+    def get_real_table(self, row: Dict[str, Any]) -> List[str]:
+        args = []
+        if self.sharding_algorithm_args:
+            args = self.sharding_algorithm_args.copy()
+
+        for i in self.sharding_columns:
+            cv = row.get(i, None)
+            if not cv:
+                raise Exception(
+                        "row needs to contain the sharding fields[{}].".format(
+                            i))
+            args.append(cv)
+        sid = self.sharding_algorithm(*args)
+        node = self.backends.get(sid, None)
+        if not node:
+            raise Exception("can not get backend.")
+        return [node.prefix + str(node.number)]
 
     def get_lock_columns(self) -> List[str]:
         return self.lock_columns

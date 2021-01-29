@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from pidal.dservice.table.tools import Tools
 from pidal.dservice.backend.backend_manager import BackendManager
@@ -130,6 +130,30 @@ class DoubleSharding(Table):
         if not result:
             raise Exception(
                     "SQL needs to contain the sharding fields[{}].".format(
+                        ",".join(self.sharding_algorithm[0])))
+        return result
+
+    def get_real_table(self, row: Dict[str, Any]) -> List[str]:
+        result = []
+        for i in range(0, 2):
+            args = []
+            if self.sharding_algorithm_args[i]:
+                args = self.sharding_algorithm_args[i]
+
+            for i in self.sharding_columns[i]:
+                cv = row.get(i, None)
+                if not cv:
+                    continue
+                args.append(cv)
+
+            sid = self.sharding_algorithm[i](*args)
+            node = self.backends[i].get(sid, None)
+            if not node:
+                raise Exception("can not get real table.")
+            result.append(node)
+        if not result:
+            raise Exception(
+                    "row needs to contain the sharding fields[{}].".format(
                         ",".join(self.sharding_algorithm[0])))
         return result
 

@@ -1,5 +1,5 @@
 import abc
-from typing import List
+from typing import List, Dict, Any
 
 from pidal.node.result import result
 from pidal.dservice.sqlparse.paser import DML
@@ -38,6 +38,10 @@ class Table(metaclass=abc.ABCMeta):
     def get_status(self) -> RuleStatus:
         pass
 
-    @abc.abstractclassmethod
+    @abc.abstractmethod
+    def get_real_table(self, row: Dict[str, Any]) -> List[str]:
+        pass
+
+    @abc.abstractmethod
     def get_lock_columns(self) -> List[str]:
         pass

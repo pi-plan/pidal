@@ -83,5 +83,10 @@ class Raw(Table):
             raise Exception("can not get backend.")
         return [self.backend]
 
+    def get_real_table(self, row) -> List[str]:
+        if not self.name:
+            raise Exception("can not get real name.")
+        return [self.name]
+
     def get_lock_columns(self) -> List[str]:
         return self.lock_columns

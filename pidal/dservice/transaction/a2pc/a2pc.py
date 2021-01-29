@@ -1,6 +1,7 @@
 import asyncio
+from pidal.node.connection import Connection
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import sqlparse
 
@@ -12,7 +13,7 @@ from pidal.dservice.table.table import Table
 from pidal.meta.model import DBTableStrategyBackend
 from pidal.dservice.transaction.a2pc.client.constant import A2PCOperation,\
         A2PCStatus
-from pidal.dservice.transaction.a2pc.client.client import A2PClient
+from pidal.dservice.transaction.a2pc.client.client import A2PCResponse, A2PClient
 from pidal.constant.db import TransStatus
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.dservice.database.database import Database
@@ -98,7 +99,7 @@ class A2PC(Trans):
                 raise Exception("lock data need [{}] column.".format(i))
             lock_keys[i] = sql.raw_where[i]
         lock = await self.a2pc_client.acquire_lock(self.xid, node[0].node,
-                                                   table.get_name(), lock_keys,
+                                                   str(sql.table), lock_keys,
                                                    str(sql.raw))
         if lock.status != 0:
             raise Exception("{} acquire lock fail: {}", str(sql.raw), lock.msg)
@@ -145,7 +146,7 @@ class A2PC(Trans):
 
         # 先计算好数据在上锁。减少锁定时间。
         lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
-                                               table.get_name(), lock_keys,
+                                               str(sql.table), lock_keys,
                                                str(sql.raw))
         c.append(lock_c)
         r = await asyncio.gather(*c)
@@ -170,11 +171,6 @@ class A2PC(Trans):
         for i in node:
             c.append(self._execute_ending_sql(ending_sql, i))
         await asyncio.gather(*c)
-        # 如果在 rollback 的时候异常，抛错给 app，即使数据库没有 rollback，
-        # 也会在超时机制下回滚。 backend 遇到异常会关闭 session 触发 mysql
-        # 的超时
-        # 如果在 commit 的时候出现异常，返回错误给客户端，客户端可以重试，
-        # 成功就走正常流程，或者选择回滚，回滚就走事务回滚流程
         if ending_sql == "ROLLBACK":
             return return_v  # type: ignore
         return result.OK(1, 0, 2, 0, "", False)
@@ -186,19 +182,15 @@ class A2PC(Trans):
             return await backend.rollback()
         return await backend.commit()
 
-    async def _execute_update(self, table: Table, node: DBTableStrategyBackend,
-                              before_sql: str,
-                              sql: DMLW) -> result.Result:
+    async def _execute_dml(self, node: DBTableStrategyBackend,
+                           before_sql: str, sql: DMLW) -> result.Result:
         sql.add_pidal(1)
-        if isinstance(table, Raw):
-            backend = await self.backend_manager.get_backend(node.node,
-                                                             self.xid)
-            logger.warning(before_sql + str(sql.raw))
-            return await backend.query(before_sql + str(sql.raw))
         backend = await self.backend_manager.get_backend(node.node, self.xid)
-        sql.modify_table(node.prefix + str(node.number))
-        logger.warning(before_sql + str(sql.raw))
         return await backend.query(before_sql + str(sql.raw))
+
+    @staticmethod
+    def _modify_table(node: DBTableStrategyBackend, sql: DML):
+        sql.modify_table(node.prefix + str(node.number))
 
     async def _update_undo_log(self, lock_keys: Dict[str, Any],
                                sql: Update) -> Optional[result.Error]:
@@ -241,38 +233,45 @@ class A2PC(Trans):
 
     async def execute_insert(self, sql: Insert) -> result.Result:
         table = self.db.get_table(str(sql.table))
-        if not sql.raw_where:
-            raise Exception("delete must contain [where].")
-
         lock_keys = {}
         node = table.get_node(sql)
         for i in table.get_lock_columns():
             if i not in sql.new_value.keys():
                 raise Exception("lock data need [{}] column.".format(i))
-            lock_keys[i] = sql.raw_where[i]
+            lock_keys[i] = sql.new_value[i]
 
-        error = await self._insert_undo_log(lock_keys, sql)
-        if not error:
-            return error  # type: ignore
-        reundo_sql = self.reundo_log_generator(table.get_name(), lock_keys)
-        if not reundo_sql:
-            raise Exception("can not get redo undo log.")
-        before_sql = "begin;" + reundo_sql
         c = []
         for i in node:
-            c.append(self._execute_update(table, i, before_sql, sql))
+            self._modify_table(i, sql)
+            error = await self._insert_undo_log(lock_keys, sql)
+            if error:
+                return error  # type: ignore
+            reundo_sql = self.reundo_log_generator(str(sql.table), lock_keys)
+            if not reundo_sql:
+                raise Exception("can not get redo undo log.")
+            before_sql = "begin;" + reundo_sql
+            c.append(self._execute_dml(i, before_sql, sql))
 
         # 先计算好数据在上锁。减少锁定时间。
         lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
-                                               table.get_name(), lock_keys,
+                                               str(sql.table), lock_keys,
                                                str(sql.raw))
         c.append(lock_c)
         r = await asyncio.gather(*c)
+        return await self._execute_ending(r, node, sql)  # type: ignore
+
+    async def _execute_ending(self,
+                              r: List[Union[result.Result, A2PCResponse]],
+                              node: List[DBTableStrategyBackend], sql: DMLW):
         lock = r[-1]
         r = r[:-1]
         ending_sql = "COMMIT"
         return_v = None
-        if lock.status != 0:
+        if not isinstance(lock, A2PCResponse):
+            ending_sql = "ROLLBACK"
+            return_v = result.Error(1000, "{} acquire lock fail: {}".format(
+                             str(sql.raw), str(lock)))
+        elif lock.status != 0:
             logger.warning("{} acquire lock fail: {}".format(
                              str(sql.raw), lock.msg))
             ending_sql = "ROLLBACK"
@@ -288,7 +287,11 @@ class A2PC(Trans):
         c = []
         for i in node:
             c.append(self._execute_ending_sql(ending_sql, i))
-
+        # 如果在 rollback 的时候异常，抛错给 app，即使数据库没有 rollback，
+        # 也会在超时机制下回滚。 backend 遇到异常会关闭 session 触发 mysql
+        # 的超时
+        # 如果在 commit 的时候出现异常，返回错误给客户端，客户端可以重试，
+        # 成功就走正常流程，或者选择回滚，回滚就走事务回滚流程
         await asyncio.gather(*c)
         if ending_sql == "ROLLBACK":
             return return_v  # type: ignore
@@ -296,17 +299,17 @@ class A2PC(Trans):
 
     async def _insert_undo_log(self, lock_keys: Dict[str, Any],
                                sql: Insert) -> Optional[result.Error]:
-        table = self.db.get_table(str(sql.table))
-        table_logs = self._reundo_log.get(table.get_name(), None)
+        table_name = str(sql.table)
+        table_logs = self._reundo_log.get(table_name, None)
 
         if table_logs is None:
             table_logs = {}
-            self._reundo_log[table.get_name()] = table_logs
+            self._reundo_log[table_name] = table_logs
         log = table_logs.get(str(lock_keys), None)
 
         if log is None:
-            self._record_undo_data(table.get_name(), lock_keys, None)
-            log = self._reundo_log[table.get_name()][str(lock_keys)]
+            self._record_undo_data(table_name, lock_keys, None)
+            log = self._reundo_log[table_name][str(lock_keys)]
         log.set_redo(sql.new_value, A2PCOperation.INSERT)
 
     async def execute_delete(self, sql: Delete) -> result.Result:
@@ -334,7 +337,7 @@ class A2PC(Trans):
 
         # 先计算好数据在上锁。减少锁定时间。
         lock_c = self.a2pc_client.acquire_lock(self.xid, node[0].node,
-                                               table.get_name(), lock_keys,
+                                               str(sql.table), lock_keys,
                                                str(sql.raw))
         c.append(lock_c)
         r = await asyncio.gather(*c)

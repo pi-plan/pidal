@@ -102,7 +102,7 @@ class DoubleSharding(Table):
         sql.modify_table(node.prefix + str(node.number))
         if isinstance(sql, DMLW):
             sql.add_pidal(1)  # TODO 管理隐藏字段
-        result = await backend.query(str(sql))
+        result = await backend.query(str(sql.raw))
         return result
 
     def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:

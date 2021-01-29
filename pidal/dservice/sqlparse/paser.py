@@ -333,8 +333,8 @@ class Insert(DMLW):
             return
         self.column = {}
         for k, v in values.items():
-            if v.isdigit():
-                self.column[k] = int(v)
+            self.column[k] = v
+        self.new_value = values
 
     def add_pidal(self, value: int):
         for i in self.table_f.tokens:
@@ -383,7 +383,7 @@ class Insert(DMLW):
                         index = 0
                         value = {}
                         for k in j.tokens:
-                            t = str(k.value).strip()
+                            t = str(k.value).strip("\"'")
                             if not t:
                                 continue
                             if t == ",":

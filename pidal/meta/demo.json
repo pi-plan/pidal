@@ -70,7 +70,7 @@
           },
           {
             "type": "sharding",
-            "name": "test_sharing",
+            "name": "test_sharding",
             "status": "ACTIVE",
             "zskeys": [
               "user_id"
@@ -79,13 +79,13 @@
             "zs_algorithm_args": [
               16
             ],
-            "lock_key": "PRIMARY",
+            "lock_key": "user_id",
             "strategies": [
               {
                 "backends": [
                   "db0.test_s_0",
                   "db0.test_s_2",
-                  "db1.test_s_{1, 3, 1}"
+                  "db1.test_s_{1, 4, 2}"
                 ],
                 "sharding_columns": [
                   "user_id"
@@ -114,7 +114,7 @@
                 "backends": [
                   "db0.test_d_0",
                   "db0.test_d_2",
-                  "db1.test_d_{1, 3, 1}"
+                  "db1.test_d_{1, 4, 2}"
                 ],
                 "sharding_columns": [
                   "user_id"
@@ -128,7 +128,7 @@
                 "backends": [
                   "db0.test_d1_0",
                   "db0.test_d1_2",
-                  "db1.test_d1_{1, 3, 1}"
+                  "db1.test_d1_{1, 4, 2}"
                 ],
                 "sharding_columns": [
                   "topic_id"

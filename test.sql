@@ -82,7 +82,8 @@ CREATE TABLE `test_s_0` (
   `user_id` varchar(255) NOT NULL,
   `name` varchar(100) NOT NULL,
   `pidal_c` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_s_1`;
@@ -91,7 +92,8 @@ CREATE TABLE `test_s_1` (
   `user_id` varchar(255) NOT NULL,
   `name` varchar(100) NOT NULL,
   `pidal_c` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_s_2`;
@@ -100,7 +102,8 @@ CREATE TABLE `test_s_2` (
   `user_id` varchar(255) NOT NULL,
   `name` varchar(100) NOT NULL,
   `pidal_c` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_s_3`;
@@ -109,7 +112,8 @@ CREATE TABLE `test_s_3` (
   `user_id` varchar(255) NOT NULL,
   `name` varchar(100) NOT NULL,
   `pidal_c` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_d_0`;

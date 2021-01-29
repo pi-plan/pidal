@@ -68,6 +68,7 @@ class A2PClient(object):
         try:
             logger.info("put: {}, param: {}".format(url, body))
             response = await client.fetch(req)
+            logger.info("response: {}".format(response.body))
             return self._parse_result(response)
         except Exception as e:
             logger.warning("Error: %s" % e)
@@ -89,6 +90,7 @@ class A2PClient(object):
         try:
             logger.info("put: {}, param: {}".format(url, body))
             response = await client.fetch(req)
+            logger.info("response: {}".format(response.body))
             return self._parse_result(response)
         except Exception as e:
             logger.warning("Error: %s" % e)

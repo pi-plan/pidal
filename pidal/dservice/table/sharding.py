@@ -79,7 +79,7 @@ class Sharding(Table):
         sql.modify_table(node.prefix + str(node.number))
         if isinstance(sql, DMLW):
             sql.add_pidal(1)  # TODO 管理隐藏字段
-        result = await backend.query(sql)
+        result = await backend.query(str(sql.raw))
         return result
 
     def get_node(self, sql: DML) -> List[DBTableStrategyBackend]:
@@ -89,7 +89,7 @@ class Sharding(Table):
                         ",".join(self.sharding_columns)))
         args = []
         if self.sharding_algorithm_args:
-            args = self.sharding_algorithm_args
+            args = self.sharding_algorithm_args.copy()
 
         for i in self.sharding_columns:
             cv = sql.column.get(i, None)
@@ -98,7 +98,6 @@ class Sharding(Table):
                         "SQL needs to contain the sharding fields[{}].".format(
                             i))
             args.append(cv)
-
         sid = self.sharding_algorithm(*args)
         node = self.backends.get(sid, None)
         if not node:

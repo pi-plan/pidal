@@ -34,14 +34,13 @@ class AIOMySQL(Connection):
         self._result: Optional[MySQLResult] = None
 
     async def connect(self):
-
-        print("connection reconnect")
         client_flag = CLIENT.MULTI_STATEMENTS | CLIENT.MULTI_RESULTS
         if not self.closed:
             self.close()
         self._conn = await aiomysql.connect(**self.dsn.get_args(),
                                             client_flag=client_flag,
                                             cursorclass=DictCursor)
+        await self._conn.query("set @@session.autocommit=0;")
         self._last_use_time = time.time()
         self.closed = False
 
@@ -56,7 +55,6 @@ class AIOMySQL(Connection):
         await self._conn.begin()
 
     async def commit(self):
-        traceback.print_exc()
         await self._ensure_connected()
         await self._conn.commit()
 

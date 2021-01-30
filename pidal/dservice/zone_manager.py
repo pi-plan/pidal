@@ -12,7 +12,9 @@ class ShardingID(object):
 
 
 class ZoneManager(object):
-    def __init__(self, current_zone_id: int, zones: List[ZoneConfig]):
+    def __init__(self, version: int, current_zone_id: int,
+                 zones: List[ZoneConfig]):
+        self.version = version
         self.current_zone_id = current_zone_id
         self.zones = zones
         self.zsids: Dict[int, ShardingID] = {}
@@ -33,3 +35,6 @@ class ZoneManager(object):
         if not sid:
             return False
         return sid.status == RuleStatus.ACTIVE
+
+    def get_pidal_c_v(self):
+        return (self.current_zone_id << 53) | (self.version << 33)

@@ -5,7 +5,8 @@ from pidal.dservice.table.tools import Tools
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
-from pidal.dservice.sqlparse.paser import DML, DMLW, Select
+from pidal.dservice.sqlparse.paser import DML, DMLW, Select, Insert, Delete,\
+        Update
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
@@ -80,6 +81,10 @@ class DoubleSharding(Table):
         return self.status
 
     async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
+        if not self.is_allow_write_sql(sql):
+            return result.Error(
+                1034, "current zone dont allowed execute this sql{}".format(
+                    str(sql.raw)))
         nodes = self.get_node(sql)
         if isinstance(sql, Select):
             nodes = nodes[:1]
@@ -101,7 +106,7 @@ class DoubleSharding(Table):
         backend = await self.backend_manager.get_backend(node.node, trans_id)
         sql.modify_table(node.prefix + str(node.number))
         if isinstance(sql, DMLW):
-            sql.add_pidal(1)  # TODO 管理隐藏字段
+            sql.add_pidal(self.get_pidal_c_v())
         result = await backend.query(str(sql.raw))
         return result
 
@@ -114,14 +119,13 @@ class DoubleSharding(Table):
         for i in range(0, 2):
             args = []
             if self.sharding_algorithm_args[i]:
-                args = self.sharding_algorithm_args[i]
+                args = self.sharding_algorithm_args[i].copy()
 
-            for i in self.sharding_columns[i]:
-                cv = sql.column.get(i, None)
+            for j in self.sharding_columns[i]:
+                cv = sql.column.get(j, None)
                 if not cv:
                     continue
                 args.append(cv)
-
             sid = self.sharding_algorithm[i](*args)
             node = self.backends[i].get(sid, None)
             if not node:
@@ -138,10 +142,10 @@ class DoubleSharding(Table):
         for i in range(0, 2):
             args = []
             if self.sharding_algorithm_args[i]:
-                args = self.sharding_algorithm_args[i]
+                args = self.sharding_algorithm_args[i].copy()
 
-            for i in self.sharding_columns[i]:
-                cv = row.get(i, None)
+            for j in self.sharding_columns[i]:
+                cv = row.get(j, None)
                 if not cv:
                     continue
                 args.append(cv)
@@ -150,12 +154,39 @@ class DoubleSharding(Table):
             node = self.backends[i].get(sid, None)
             if not node:
                 raise Exception("can not get real table.")
-            result.append(node)
+            result.append(node.prefix + str(node.number))
         if not result:
             raise Exception(
                     "row needs to contain the sharding fields[{}].".format(
                         ",".join(self.sharding_algorithm[0])))
         return result
+
+    def is_allow_write_zone(self, row: Dict[str, Any]) -> bool:
+        args = []
+        if self.zs_algorithm_args:
+            args = self.zs_algorithm_args.copy()
+        for i in self.zskeys:
+            cv = row.get(i, None)
+            if not cv:
+                raise Exception(
+                        "row needs to contain the zskey fields[{}].".format(
+                            i))
+            args.append(cv)
+        zsid = self.zs_algorithm(*args)
+        return self.zone_manager.is_allow(zsid)
+
+    def is_allow_write_sql(self, sql: DML) -> bool:
+        if isinstance(sql, Select):
+            return True
+        elif isinstance(sql, Insert):
+            return self.is_allow_write_zone(sql.new_value)
+        elif isinstance(sql, Update) or isinstance(sql, Delete):
+            return self.is_allow_write_zone(sql.raw_where)
+        else:
+            return False
+
+    def get_pidal_c_v(self) -> int:
+        return self.zone_manager.get_pidal_c_v()
 
     def get_lock_columns(self) -> List[str]:
         return self.lock_columns

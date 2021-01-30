@@ -70,7 +70,7 @@ class AIOMySQL(Connection):
             self._result = cur._result
             return cur
         except MySQLError as e:
-            return result.Error(e.args[0], e.args[1])
+            return result.Error(10003, str(e))
 
     async def query(self, sql) -> result.Result:
         try:

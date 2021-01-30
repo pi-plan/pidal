@@ -38,8 +38,8 @@ class Frontend(tornado.web.Application):
         super().__init__(handlers)
         self._get_latest()
         self.loop = asyncio.get_event_loop()
-        self.loop.call_later(6, lambda: asyncio.create_task(
-            self.start_clean()))
+        #  self.loop.call_later(6, lambda: asyncio.create_task(
+            #  self.start_clean()))
         self.loop.call_later(6, lambda: asyncio.create_task(
             self.start_rollback()))
 

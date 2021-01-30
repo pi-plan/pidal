@@ -1,12 +1,13 @@
 import asyncio
 
-from typing import List
+from typing import List, Any, Dict
 
 from pidal.dservice.table.tools import Tools
 from pidal.dservice.backend.backend_manager import BackendManager
 from pidal.lib.algorithms.factory import Factory as algorithms
 from pidal.dservice.table.table import Table
-from pidal.dservice.sqlparse.paser import DML, DMLW
+from pidal.dservice.sqlparse.paser import DML, DMLW, Delete, Insert, Select,\
+        Update
 from pidal.constant.db import DBTableType
 from pidal.constant.common import RuleStatus
 from pidal.meta.model import DBTable, DBTableStrategy, DBTableStrategyBackend
@@ -66,13 +67,17 @@ class Raw(Table):
         return self.status
 
     async def execute_dml(self, sql: DML, trans_id: int = 0) -> result.Result:
+        if not self.is_allow_write_sql(sql):
+            return result.Error(
+                1034, "current zone dont allowed execute this sql{}".format(
+                    str(sql.raw)))
         node = self.get_node(sql)[0]
         backend = await self.backend_manager.get_backend(node.node, trans_id)
         if isinstance(sql, DMLW):
             if not trans_id:
                 return result.Error(1002,
                                     "write data must begin a transaction.")
-            sql.add_pidal(1)  # TODO 管理隐藏字段
+            sql.add_pidal(self.get_pidal_c_v())
         r = await backend.query(str(sql.raw))
         if not trans_id:
             self.backend_manager.release(node.node, backend)
@@ -87,6 +92,33 @@ class Raw(Table):
         if not self.name:
             raise Exception("can not get real name.")
         return [self.name]
+
+    def is_allow_write_sql(self, sql: DML) -> bool:
+        if isinstance(sql, Select):
+            return True
+        elif isinstance(sql, Insert):
+            return self.is_allow_write_zone(sql.new_value)
+        elif isinstance(sql, Update) or isinstance(sql, Delete):
+            return self.is_allow_write_zone(sql.raw_where)
+        else:
+            return False
+
+    def is_allow_write_zone(self, row: Dict[str, Any]) -> bool:
+        args = []
+        if self.zs_algorithm_args:
+            args = self.zs_algorithm_args.copy()
+        for i in self.zskeys:
+            cv = row.get(i, None)
+            if not cv:
+                raise Exception(
+                        "row needs to contain the zskey fields[{}].".format(
+                            i))
+            args.append(cv)
+        zsid = self.zs_algorithm(*args)
+        return self.zone_manager.is_allow(zsid)
+
+    def get_pidal_c_v(self) -> int:
+        return self.zone_manager.get_pidal_c_v()
 
     def get_lock_columns(self) -> List[str]:
         return self.lock_columns

@@ -212,6 +212,9 @@ class Delete(DMLW):
         return self._get_where_part()
 
     def add_pidal(self, _: int):  # type: ignore
+        if getattr(self, "pidal_c", None):
+            return
+        self.pidal_c = True
         for item in self.raw.tokens:
             if item.is_group and isinstance(item, Where):
                 c = sqlparse.parse(" pidal_c & 1 AND ")
@@ -285,6 +288,9 @@ class Update(DMLW):
         return tables
 
     def add_pidal(self, value: int):
+        if getattr(self, "pidal_c", None):
+            return
+        self.pidal_c = value
         where = None
         for i, item in enumerate(self.raw.tokens):
             if item.is_group and isinstance(item, Where):
@@ -337,6 +343,9 @@ class Insert(DMLW):
         self.new_value = values
 
     def add_pidal(self, value: int):
+        if getattr(self, "pidal_c", None):
+            return
+        self.pidal_c = value
         for i in self.table_f.tokens:
             if isinstance(i, Parenthesis):
                 for j in i.tokens:

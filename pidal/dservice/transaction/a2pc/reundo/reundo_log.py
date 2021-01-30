@@ -11,7 +11,7 @@ class ReUnDoLog(object):
     def new(cls, xid: int, lock_keys: Dict[str, Any], table: str):
         pass
 
-    def set_undo(self, r: Optional[result.ResultSet]):
+    def set_undo(self, r: Optional[Dict[str, Any]]):
         pass
 
     def set_redo(self, v: Optional[Dict[str, Any]], operation: A2PCOperation):

@@ -2,7 +2,6 @@ import json
 
 from typing import Any, Dict, Optional
 
-from pidal.node.result import result
 from pidal.dservice.transaction.a2pc.client.constant import A2PCOperation,\
         A2PCStatus
 from pidal.dservice.transaction.a2pc.reundo.reundo_log import ReUnDoLog
@@ -23,15 +22,11 @@ class Unique(ReUnDoLog):
         self.undo: Optional[Dict[str, Any]] = None
         self.redo: Optional[Dict[str, Any]] = None
 
-    def set_undo(self, r: Optional[result.ResultSet]):
-        if not r:
+    def set_undo(self, old_data: Optional[Dict[str, Any]]):
+        if not old_data:
             return
-        old_data = r.to_dict()
-        if not old_data or len(old_data) != 1:
-            raise Exception("data must unique.")
-
         if self.undo is None:
-            self.undo = old_data[0]
+            self.undo = old_data
         elif self.undo != old_data:
             raise Exception("local data record error.")
 

@@ -45,3 +45,15 @@ class Table(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_lock_columns(self) -> List[str]:
         pass
+
+    @abc.abstractmethod
+    def is_allow_write_zone(self, row: Dict[str, Any]) -> bool:
+        pass
+
+    @abc.abstractmethod
+    def is_allow_write_sql(self, sql: DML) -> bool:
+        pass
+
+    @abc.abstractmethod
+    def get_pidal_c_v(self) -> int:
+        pass

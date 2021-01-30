@@ -1,8 +1,10 @@
 import asyncio
 import json
+import time
 
 from typing import Any, Dict, List
 
+from pidal.node.connection import Connection
 from pidal.dservice.transaction.a2pc.client.constant import A2PCStatus
 from pidal.node.result import result
 from pidal.meta.model import DBConfig, DBNode
@@ -20,6 +22,8 @@ get_unredo_sql = "select * from reundo_log where xid = {xid} \
         and `table` = '{table}' and lock_key = '{lock_key}'"
 lock_target_line = "begin;select * from {} where {} for update"
 rollback_sql = "update {} set {} where {};commit;"
+rollback_timeout = "BEGIN;UPDATE transaction_info_{} set `status` = {} \
+        where update_time <= '{}' and status = 1;COMMIT"
 
 
 class Rollbacker(object):
@@ -46,8 +50,19 @@ class Rollbacker(object):
     async def start(self):
         c = []
         for i, n in enumerate(self.tm_nodes):
+            await self._start_tm_timeout(i, n.name)
             c.append(self._start_tm(i, n.name))
         await asyncio.gather(*c)
+
+    async def _start_tm_timeout(self, number: int, node: str):
+        tm = await self.backend_manager.get_backend(node)
+        roll_time = time.strftime("%Y-%m-%d %H:%M:%S",
+                                  time.localtime(time.time() - 600))
+        cur = await tm.query(rollback_timeout.format(number,
+                                                     A2PCStatus.ROLLBACKING,
+                                                     roll_time))
+        if not cur or isinstance(cur, result.Error):
+            raise Exception(cur.error_code, cur.message)
 
     async def _start_tm(self, number: int, node: str):
         tm = await self.backend_manager.get_backend(node)
@@ -57,7 +72,6 @@ class Rollbacker(object):
         if not cur or isinstance(cur, result.Error):
             raise Exception(cur.error_code, cur.message)
         r = await cur.fetchall()
-        print("rollback: {}{}".format(r, tm))
         if not r:
             return
         for i in r:
@@ -92,13 +106,31 @@ class Rollbacker(object):
             self.backend_manager.release(lock["node"], rm)
             raise Exception(cur.error_code, cur.message)
         r = await cur.fetchone()
+        if not r:
+            return
         reundo_log = json.loads(r["reundo_log"])
         lock_key_map = json.loads(r["lock_key"])
+        if reundo_log["operation"] == "INSERT":
+            await self._rollback_line_insert(rm, lock["node"], lock["table"],
+                                             lock_key_map, reundo_log)
+        elif reundo_log["operation"] == "UPDATE":
+            await self._rollback_line_update(rm, lock["node"], lock["table"],
+                                             lock_key_map, reundo_log)
+        elif reundo_log["operation"] == "DELETE":
+            await self._rollback_line_delete(rm, lock["node"], lock["table"],
+                                             lock_key_map, reundo_log)
+        else:
+            raise Exception("unknown operation:[{}]".format(reundo_log))
+
+    async def _rollback_line_update(self, rm: Connection,
+                                    node: str, table: str,
+                                    lock: Dict[str, Any],
+                                    reundo_log: Dict[str, Any]):
         where = " and ".join(
-                ["{} = {}".format(k, v) for k, v in lock_key_map.items()])
-        line_c = await rm.batch(lock_target_line.format(lock["table"], where))
+                ["{} = {}".format(k, v) for k, v in lock.items()])
+        line_c = await rm.batch(lock_target_line.format(table, where))
         if not line_c or isinstance(line_c, result.Error):
-            self.backend_manager.release(lock["node"], rm)
+            self.backend_manager.release(node, rm)
             raise Exception(line_c.error_code, line_c.message)
         while await line_c.nextset():
             pass
@@ -111,13 +143,73 @@ class Rollbacker(object):
         if need_update:
             set_str = ",".join(
                     ["{} = '{}'".format(k, v) for k, v in need_update.items()])
-            rollback = rollback_sql.format(lock["table"], set_str, where)
+            rollback = rollback_sql.format(table, set_str, where)
             rr = await rm.query(rollback)
             if isinstance(rr, result.Error):
-                self.backend_manager.release(lock["node"], rm)
+                self.backend_manager.release(node, rm)
                 raise Exception(rr.error_code, rr.message)
 
-        self.backend_manager.release(lock["node"], rm)
+        self.backend_manager.release(node, rm)
+
+    async def _rollback_line_delete(self, rm: Connection,
+                                    node: str, table: str,
+                                    lock: Dict[str, Any],
+                                    reundo_log: Dict[str, Any]):
+        where = " and ".join(
+                ["{} = {}".format(k, v) for k, v in lock.items()])
+        line_c = await rm.batch(lock_target_line.format(table, where))
+        if not line_c or isinstance(line_c, result.Error):
+            self.backend_manager.release(node, rm)
+            raise Exception(line_c.error_code, line_c.message)
+        while await line_c.nextset():
+            pass
+        line = await line_c.fetchone()
+        if line:
+            for k, v in line.items():
+                rv = reundo_log["undo"].get(k)
+                if rv != v:
+                    # 理论上不会出现这个场景，这里作为监控
+                    raise Exception("data has changed, before rollback.")
+        columns = ",".join(list(reundo_log["undo"].keys()))
+        values = ",".join(
+                ["'{}'".format(i) for i in reundo_log["undo"].values()])
+        rr = await rm.query("INSERT INTO {} ({}) VALUES ({});COMMIT;".format(
+            table, columns, values))
+        if isinstance(rr, result.Error):
+            self.backend_manager.release(node, rm)
+            raise Exception(rr.error_code, rr.message)
+        self.backend_manager.release(node, rm)
+
+    async def _rollback_line_insert(self, rm: Connection,
+                                    node: str, table: str,
+                                    lock: Dict[str, Any],
+                                    reundo_log: Dict[str, Any]):
+        where = " and ".join(
+                ["{} = {}".format(k, v) for k, v in lock.items()])
+        line_c = await rm.batch(lock_target_line.format(table, where))
+        if not line_c or isinstance(line_c, result.Error):
+            self.backend_manager.release(node, rm)
+            raise Exception(line_c.error_code, line_c.message)
+        while await line_c.nextset():
+            pass
+        line = await line_c.fetchone()
+        if not line:
+            return
+        for k, v in line.items():
+            if not isinstance(v, str):
+                v = str(v)
+            if k in ("id", "pidal_c"):  # TODO 允许配置
+                continue
+            rv = reundo_log["redo"].get(k)
+            if rv != v:
+                # 理论上不会出现这个场景，这里作为监控
+                raise Exception("data has changed, before rollback.")
+        rr = await rm.query("DELETE FROM {} WHERE {};COMMIT;".format(
+            table, where))
+        if isinstance(rr, result.Error):
+            self.backend_manager.release(node, rm)
+            raise Exception(rr.error_code, rr.message)
+        self.backend_manager.release(node, rm)
 
     async def _get_all_locks(self, xid: int) -> List[Dict]:
         c = []

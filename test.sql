@@ -73,7 +73,8 @@ CREATE TABLE `test_raw` (
   `test` varchar(255) NOT NULL,
   `xid` varchar(100) NOT NULL,
   `pidal_c` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY xid(xid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 DROP TABLE if exists `test_s_0`;

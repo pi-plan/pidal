@@ -55,7 +55,6 @@ class Cleaner(object):
         if not cur or isinstance(cur, result.Error):
             raise Exception(cur.error_code, cur.message)
         r = await cur.fetchall()
-        print("cleaner: {}{}".format(r, tm))
         if not r:
             return
         for i in r:

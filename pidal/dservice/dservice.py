@@ -20,7 +20,8 @@ class DService(object):
         self.zone_id = zone_id
         self.status: DServiceStatus = DServiceStatus.INIT
         self.version = version
-        self.zone_manager: ZoneManager = ZoneManager(self.zone_id, zones)
+        self.zone_manager: ZoneManager = ZoneManager(version, self.zone_id,
+                                                     zones)
         self.db = Database(self.zone_manager, db)
 
     def get_version(self) -> int:
